@@ -49,16 +49,15 @@ echo "  Rule Signal: $RULE_SIGNAL" >&2
 # Step 3: Get real-time price from Saxo
 echo "" >&2
 echo "[Step 3] Fetching real-time price from Saxo..." >&2
-ACCOUNT_INFO=$("$SCRIPT_DIR/saxo/get-accounts.sh" 2>&1) || {
+ACCOUNT_INFO=$("$SCRIPT_DIR/saxo/get-accounts.sh" 2>/dev/null) || {
     echo "Error: Failed to get account info" >&2
-    echo "$ACCOUNT_INFO" >&2
     exit 1
 }
-ACCOUNT_KEY=$(echo "$ACCOUNT_INFO" | jq -r '.accountKey')
+ACCOUNT_KEY=$(echo "$ACCOUNT_INFO" | jq -r '.accountKey' 2>/dev/null)
 
 if [[ -z "$ACCOUNT_KEY" || "$ACCOUNT_KEY" == "null" ]]; then
     echo "Error: Could not extract accountKey" >&2
-    echo "Account info: $ACCOUNT_INFO" >&2
+    echo "Raw output: $ACCOUNT_INFO" >&2
     exit 1
 fi
 
