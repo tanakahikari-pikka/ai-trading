@@ -253,6 +253,9 @@ echo "========================================" >&2
 # Step 7: Calculate SL/TP if enabled
 SL_PRICE=""
 TP_PRICE=""
+SL_TP_SOURCE=""
+AI_SL_TP_REASONING=""
+
 if [[ "$FINAL_DECISION" == "go" && -n "$ACTION" && "$SL_TP_ENABLED" == "true" ]]; then
     echo "" >&2
     echo "[Step 7] Calculating SL/TP..." >&2
@@ -264,17 +267,70 @@ if [[ "$FINAL_DECISION" == "go" && -n "$ACTION" && "$SL_TP_ENABLED" == "true" ]]
         ENTRY_PRICE="$BID"
     fi
 
-    # Calculate SL/TP
-    SL_TP_RESULT=$(calculate_sl_tp "$ENTRY_PRICE" "$ACTION" "$ATR_VALUE" "$SL_MULTIPLIER" "$TP_VALUE" "$DECIMAL_PLACES")
-    SL_PRICE=$(echo "$SL_TP_RESULT" | jq -r '.sl_price')
-    TP_PRICE=$(echo "$SL_TP_RESULT" | jq -r '.tp_price')
-    SL_DISTANCE=$(echo "$SL_TP_RESULT" | jq -r '.sl_distance')
-    TP_DISTANCE=$(echo "$SL_TP_RESULT" | jq -r '.tp_distance')
+    # Try to get AI-suggested SL/TP first
+    AI_SL_RAW=$(echo "$AI_RESULT" | jq -r '.sl_tp.stop_loss // "null"' 2>/dev/null)
+    AI_TP_RAW=$(echo "$AI_RESULT" | jq -r '.sl_tp.take_profit // "null"' 2>/dev/null)
+    AI_SL_TP_REASONING=$(echo "$AI_RESULT" | jq -r '.sl_tp.reasoning // ""' 2>/dev/null)
 
     echo "  Entry Price: $ENTRY_PRICE" >&2
-    echo "  Stop Loss: $SL_PRICE (distance: $SL_DISTANCE)" >&2
-    echo "  Take Profit: $TP_PRICE (distance: $TP_DISTANCE)" >&2
-    echo "  Risk:Reward = 1:$TP_VALUE" >&2
+    echo "  AI SL/TP: SL=$AI_SL_RAW, TP=$AI_TP_RAW" >&2
+
+    # Validate AI SL/TP values
+    USE_AI_SLTP=false
+    if [[ "$AI_SL_RAW" != "null" && "$AI_TP_RAW" != "null" && -n "$AI_SL_RAW" && -n "$AI_TP_RAW" ]]; then
+        # Check if values are valid numbers
+        if [[ "$AI_SL_RAW" =~ ^[0-9]+\.?[0-9]*$ && "$AI_TP_RAW" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+            # Validate SL/TP positions based on action
+            if [[ "$ACTION" == "Buy" ]]; then
+                # For Buy: SL should be below entry, TP should be above entry
+                SL_VALID=$(echo "$AI_SL_RAW < $ENTRY_PRICE" | bc -l)
+                TP_VALID=$(echo "$AI_TP_RAW > $ENTRY_PRICE" | bc -l)
+            else
+                # For Sell: SL should be above entry, TP should be below entry
+                SL_VALID=$(echo "$AI_SL_RAW > $ENTRY_PRICE" | bc -l)
+                TP_VALID=$(echo "$AI_TP_RAW < $ENTRY_PRICE" | bc -l)
+            fi
+
+            if [[ "$SL_VALID" == "1" && "$TP_VALID" == "1" ]]; then
+                USE_AI_SLTP=true
+                echo "  AI SL/TP validation: PASSED" >&2
+            else
+                echo "  AI SL/TP validation: FAILED (invalid positions)" >&2
+                echo "    SL_VALID=$SL_VALID, TP_VALID=$TP_VALID" >&2
+            fi
+        else
+            echo "  AI SL/TP validation: FAILED (not numeric)" >&2
+        fi
+    else
+        echo "  AI SL/TP: not provided" >&2
+    fi
+
+    # Use AI values or fallback to static calculation
+    if [[ "$USE_AI_SLTP" == "true" ]]; then
+        SL_PRICE="$AI_SL_RAW"
+        TP_PRICE="$AI_TP_RAW"
+        SL_TP_SOURCE="ai"
+        echo "" >&2
+        echo "  [Using AI SL/TP]" >&2
+        echo "  Stop Loss: $SL_PRICE" >&2
+        echo "  Take Profit: $TP_PRICE" >&2
+        echo "  Reasoning: $AI_SL_TP_REASONING" >&2
+    else
+        # Fallback to static ATR-based calculation
+        echo "" >&2
+        echo "  [Fallback to static calculation]" >&2
+        SL_TP_RESULT=$(calculate_sl_tp "$ENTRY_PRICE" "$ACTION" "$ATR_VALUE" "$SL_MULTIPLIER" "$TP_VALUE" "$DECIMAL_PLACES")
+        SL_PRICE=$(echo "$SL_TP_RESULT" | jq -r '.sl_price')
+        TP_PRICE=$(echo "$SL_TP_RESULT" | jq -r '.tp_price')
+        SL_DISTANCE=$(echo "$SL_TP_RESULT" | jq -r '.sl_distance')
+        TP_DISTANCE=$(echo "$SL_TP_RESULT" | jq -r '.tp_distance')
+        SL_TP_SOURCE="static"
+
+        echo "  Stop Loss: $SL_PRICE (ATR×$SL_MULTIPLIER = $SL_DISTANCE)" >&2
+        echo "  Take Profit: $TP_PRICE (SL×$TP_VALUE = $TP_DISTANCE)" >&2
+    fi
+
+    echo "  Source: $SL_TP_SOURCE" >&2
 fi
 
 # Step 8: Execute order if decision is "go"
@@ -336,6 +392,8 @@ FINAL_RESULT=$(jq -n \
     --arg sl_price "$SL_PRICE" \
     --arg tp_price "$TP_PRICE" \
     --arg sl_tp_enabled "$SL_TP_ENABLED" \
+    --arg sl_tp_source "$SL_TP_SOURCE" \
+    --arg sl_tp_reasoning "$AI_SL_TP_REASONING" \
     --argjson ai_full "$AI_RESULT" \
     '{
         decision: $decision,
@@ -372,7 +430,9 @@ FINAL_RESULT=$(jq -n \
         sl_tp: {
             enabled: ($sl_tp_enabled == "true"),
             stop_loss: (if $sl_price == "" then null else ($sl_price | tonumber) end),
-            take_profit: (if $tp_price == "" then null else ($tp_price | tonumber) end)
+            take_profit: (if $tp_price == "" then null else ($tp_price | tonumber) end),
+            source: (if $sl_tp_source == "" then null else $sl_tp_source end),
+            reasoning: (if $sl_tp_reasoning == "" then null else $sl_tp_reasoning end)
         },
         ai_full_response: $ai_full
     }')

@@ -63,6 +63,8 @@ ASK=$(echo "$RESULT" | jq -r '.price.ask // "N/A"')
 SL_TP_ENABLED=$(echo "$RESULT" | jq -r '.sl_tp.enabled // false')
 SL_PRICE=$(echo "$RESULT" | jq -r '.sl_tp.stop_loss // null')
 TP_PRICE=$(echo "$RESULT" | jq -r '.sl_tp.take_profit // null')
+SL_TP_SOURCE=$(echo "$RESULT" | jq -r '.sl_tp.source // null')
+SL_TP_REASONING=$(echo "$RESULT" | jq -r '.sl_tp.reasoning // null')
 
 # Set color based on decision
 if [[ "$DECISION" == "go" ]]; then
@@ -88,7 +90,11 @@ NEXT_ACTIONS_SHORT="${NEXT_ACTIONS:0:300}"
 
 # Build SL/TP display string
 if [[ "$SL_TP_ENABLED" == "true" && "$SL_PRICE" != "null" && "$TP_PRICE" != "null" ]]; then
-    SL_TP_VALUE="SL: ${SL_PRICE}\nTP: ${TP_PRICE}"
+    if [[ "$SL_TP_SOURCE" == "ai" ]]; then
+        SL_TP_VALUE="🤖 AI\nSL: ${SL_PRICE}\nTP: ${TP_PRICE}"
+    else
+        SL_TP_VALUE="📊 ATR\nSL: ${SL_PRICE}\nTP: ${TP_PRICE}"
+    fi
 else
     SL_TP_VALUE="-"
 fi

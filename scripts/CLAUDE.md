@@ -72,7 +72,25 @@
 
 ## Stop Loss / Take Profit
 
-ATR基準で動的に SL/TP を設定（リスクリワード比 1:2）
+### 優先順位
+
+1. **AI 提案値**: AI が `sl_tp.stop_loss` / `sl_tp.take_profit` を返した場合
+2. **静的計算**: AI が提案しない場合、ATR 基準で計算
+
+### AI 動的調整
+
+AI がチャートを分析し、最適な SL/TP を提案：
+```json
+{
+  "sl_tp": {
+    "stop_loss": 155.50,
+    "take_profit": 157.20,
+    "reasoning": "直近安値の下にSL、BBアッパー手前でTP"
+  }
+}
+```
+
+### 静的計算（フォールバック）
 
 | 項目 | 計算方法 |
 |------|----------|

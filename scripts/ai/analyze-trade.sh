@@ -170,12 +170,17 @@ $RECENT_PRICES_1H
     \"if_entry\": {
       \"direction\": \"Buy/Sell\",
       \"entry_zone\": \"エントリー推奨価格帯\",
-      \"stop_loss\": \"損切りライン\",
-      \"take_profit\": \"利確ライン\",
+      \"stop_loss\": \"損切りライン（説明）\",
+      \"take_profit\": \"利確ライン（説明）\",
       \"risk_reward_ratio\": \"リスクリワード比\"
     },
     \"wait_for\": [\"エントリー条件1\", \"エントリー条件2\"],
     \"warning\": \"注意事項\"
+  },
+  \"sl_tp\": {
+    \"stop_loss\": 損切り価格（数値）,
+    \"take_profit\": 利確価格（数値）,
+    \"reasoning\": \"SL/TP設定の根拠（1-2文）\"
   }
 }
 
@@ -184,7 +189,15 @@ $RECENT_PRICES_1H
 - 1hと4hのトレンドが一致していない場合は慎重に判断
 - 初心者にわかりやすい言葉で説明する
 - 具体的な数値を使って説明する
-- JSON以外のテキストは出力しない"
+- JSON以外のテキストは出力しない
+
+sl_tp（損切り・利確価格）について:
+- action が go の場合、必ず sl_tp に具体的な価格を設定する
+- stop_loss は Buy なら現在価格より下、Sell なら現在価格より上に設定
+- take_profit は Buy なら現在価格より上、Sell なら現在価格より下に設定
+- 直近の高値/安値、サポート/レジスタンス、ボリンジャーバンドなどを考慮して最適な価格を判断
+- reasoning にはなぜその価格を選んだか簡潔に説明
+- action が not_order の場合、sl_tp は null でよい"
 
 echo "Calling OpenAI API for educational analysis..." >&2
 
