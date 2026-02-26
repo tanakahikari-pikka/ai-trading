@@ -30,6 +30,7 @@ jobs:
           SAXO_ACCESS_TOKEN: ${{ secrets.SAXO_ACCESS_TOKEN }}
           SAXO_BASE_URL: https://gateway.saxobank.com/sim/openapi
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           chmod +x scripts/*.sh scripts/**/*.sh
           ./scripts/auto-trade.sh

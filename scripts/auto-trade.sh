@@ -182,7 +182,7 @@ fi
 
 # Output final result as JSON
 echo "" >&2
-jq -n \
+FINAL_RESULT=$(jq -n \
     --arg decision "$FINAL_DECISION" \
     --arg symbol "$SYMBOL" \
     --arg action "$ACTION" \
@@ -210,4 +210,15 @@ jq -n \
             bid: $bid,
             ask: $ask
         }
-    }'
+    }')
+
+echo "$FINAL_RESULT"
+
+# Step 8: Send Discord notification
+echo "" >&2
+echo "[Step 8] Sending Discord notification..." >&2
+if [[ -f "$SCRIPT_DIR/notify/discord.sh" ]]; then
+    echo "$FINAL_RESULT" | "$SCRIPT_DIR/notify/discord.sh"
+else
+    echo "  Discord notification script not found, skipping" >&2
+fi
