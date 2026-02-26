@@ -49,10 +49,34 @@ echo "  Rule Signal: $RULE_SIGNAL" >&2
 # Step 3: Get real-time price from Saxo
 echo "" >&2
 echo "[Step 3] Fetching real-time price from Saxo..." >&2
-ACCOUNT_INFO=$("$SCRIPT_DIR/saxo/get-accounts.sh" 2>/dev/null) || {
-    echo "Error: Failed to get account info" >&2
+
+# Load .env if exists
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    set -a
+    source "$PROJECT_ROOT/.env"
+    set +a
+fi
+
+# Check token
+if [[ -z "$SAXO_ACCESS_TOKEN" || "$SAXO_ACCESS_TOKEN" == "your_access_token_here" ]]; then
+    echo "Error: SAXO_ACCESS_TOKEN is not configured" >&2
     exit 1
-}
+fi
+
+echo "  Token configured: yes (${#SAXO_ACCESS_TOKEN} chars)" >&2
+
+# Get account info - capture both stdout and stderr
+ACCOUNT_OUTPUT=$("$SCRIPT_DIR/saxo/get-accounts.sh" 2>&1)
+ACCOUNT_EXIT_CODE=$?
+
+if [[ $ACCOUNT_EXIT_CODE -ne 0 ]]; then
+    echo "Error: get-accounts.sh failed (exit code: $ACCOUNT_EXIT_CODE)" >&2
+    echo "$ACCOUNT_OUTPUT" >&2
+    exit 1
+fi
+
+# Extract JSON (the last { ... } block)
+ACCOUNT_INFO=$(echo "$ACCOUNT_OUTPUT" | awk '/^{/,/^}/' | tail -n +1)
 ACCOUNT_KEY=$(echo "$ACCOUNT_INFO" | jq -r '.accountKey' 2>/dev/null)
 
 if [[ -z "$ACCOUNT_KEY" || "$ACCOUNT_KEY" == "null" ]]; then
