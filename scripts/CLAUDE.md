@@ -39,8 +39,9 @@
 4. saxo → リアルタイム価格・残高
 5. ai/analyze-trade.sh → AI分析（教育的フィードバック付き）
 6. 最終判断（ルールベース + AI確認）
-7. saxo/place-order → 発注（go判定時）
-8. notify/discord → 結果通知
+7. SL/TP価格計算（ATR基準）
+8. saxo/place-order → 発注 + SL/TP関連注文（go判定時）
+9. notify/discord → 結果通知
 ```
 
 ## テクニカル指標
@@ -68,6 +69,28 @@
 2. 価格 < SMA(20)
 3. MACD < シグナルライン
 4. 価格 > BB中央線
+
+## Stop Loss / Take Profit
+
+ATR基準で動的に SL/TP を設定（リスクリワード比 1:2）
+
+| 項目 | 計算方法 |
+|------|----------|
+| Stop Loss | ATR × 1.5 |
+| Take Profit | SL幅 × 2.0 |
+
+**設定（config/currencies/*.json）:**
+```json
+{
+  "sl_tp": {
+    "enabled": true,
+    "stop_loss": { "mode": "atr", "multiplier": 1.5 },
+    "take_profit": { "mode": "ratio", "value": 2.0 }
+  }
+}
+```
+
+詳細: `../rules/trading-rules.md` の「Stop Loss / Take Profit 設定」セクション
 
 ## 環境変数（.env）
 
@@ -126,6 +149,11 @@
     "primary_range": "10d",
     "secondary": "1d",
     "secondary_range": "30d"
+  },
+  "sl_tp": {
+    "enabled": true,
+    "stop_loss": { "mode": "atr", "multiplier": 1.5 },
+    "take_profit": { "mode": "ratio", "value": 2.0 }
   }
 }
 ```

@@ -20,5 +20,16 @@
     "primary_range": "10d",
     "secondary": "1d",
     "secondary_range": "30d"
+  },
+  "sl_tp": {
+    "enabled": true,
+    "stop_loss": {
+      "mode": "atr",
+      "multiplier": 1.5
+    },
+    "take_profit": {
+      "mode": "ratio",
+      "value": 2.0
+    }
   }
 }

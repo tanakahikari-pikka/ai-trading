@@ -5,6 +5,50 @@
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_ROOT="$LIB_DIR/.."
 
+# Calculate Stop Loss and Take Profit prices
+# Usage: calculate_sl_tp <entry_price> <action> <atr> <sl_multiplier> <tp_ratio> <decimal_places>
+# Returns: JSON with sl_price and tp_price
+calculate_sl_tp() {
+    local entry_price="$1"
+    local action="$2"
+    local atr="$3"
+    local sl_multiplier="${4:-1.5}"
+    local tp_ratio="${5:-2.0}"
+    local decimal_places="${6:-3}"
+
+    # Calculate SL distance based on ATR
+    local sl_distance=$(echo "$atr * $sl_multiplier" | bc -l)
+    local tp_distance=$(echo "$sl_distance * $tp_ratio" | bc -l)
+
+    local sl_price tp_price
+
+    if [[ "$action" == "Buy" ]]; then
+        # Buy: SL below entry, TP above entry
+        sl_price=$(echo "$entry_price - $sl_distance" | bc -l)
+        tp_price=$(echo "$entry_price + $tp_distance" | bc -l)
+    else
+        # Sell: SL above entry, TP below entry
+        sl_price=$(echo "$entry_price + $sl_distance" | bc -l)
+        tp_price=$(echo "$entry_price - $tp_distance" | bc -l)
+    fi
+
+    # Format to specified decimal places
+    sl_price=$(printf "%.${decimal_places}f" "$sl_price")
+    tp_price=$(printf "%.${decimal_places}f" "$tp_price")
+
+    jq -n \
+        --argjson sl_price "$sl_price" \
+        --argjson tp_price "$tp_price" \
+        --argjson sl_distance "$sl_distance" \
+        --argjson tp_distance "$tp_distance" \
+        '{
+            sl_price: $sl_price,
+            tp_price: $tp_price,
+            sl_distance: $sl_distance,
+            tp_distance: $tp_distance
+        }'
+}
+
 # Get Saxo account info
 # Returns: JSON with accountKey
 get_saxo_account() {
@@ -35,15 +79,17 @@ get_balance() {
 }
 
 # Place order
-# Usage: place_order <account_key> <uic> <action> <amount> <asset_type>
+# Usage: place_order <account_key> <uic> <action> <amount> <asset_type> [sl_price] [tp_price]
 place_order() {
     local account_key="$1"
     local uic="$2"
     local action="$3"
     local amount="$4"
     local asset_type="${5:-FxSpot}"
+    local sl_price="${6:-}"
+    local tp_price="${7:-}"
 
-    "$SCRIPTS_ROOT/saxo/place-order.sh" "$account_key" "$uic" "$action" "$amount" Market "" "$asset_type" 2>&1
+    "$SCRIPTS_ROOT/saxo/place-order.sh" "$account_key" "$uic" "$action" "$amount" Market "" "$asset_type" "$sl_price" "$tp_price" 2>&1
 }
 
 # Determine final decision

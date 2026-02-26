@@ -111,6 +111,7 @@ TREND_4H=$(extract_trend "$ANALYSIS_4H")
 BUY_CONDITIONS=$(extract_buy_conditions "$ANALYSIS_1H")
 SELL_CONDITIONS=$(extract_sell_conditions "$ANALYSIS_1H")
 VOLATILITY=$(extract_volatility "$ANALYSIS_1H")
+ATR_VALUE=$(extract_atr "$ANALYSIS_1H")
 
 echo "" >&2
 echo "  === $PRIMARY_TIMEFRAME Analysis ===" >&2
@@ -120,6 +121,7 @@ echo "  Trend: $TREND_1H" >&2
 echo "  Buy conditions: $BUY_CONDITIONS/4" >&2
 echo "  Sell conditions: $SELL_CONDITIONS/4" >&2
 echo "  Volatility: $VOLATILITY" >&2
+echo "  ATR(14): $ATR_VALUE" >&2
 echo "" >&2
 echo "  === $SECONDARY_TIMEFRAME Analysis ===" >&2
 echo "  Trend: $TREND_4H" >&2
@@ -248,24 +250,65 @@ if [[ "$FINAL_DECISION" == "go" ]]; then
 fi
 echo "========================================" >&2
 
-# Step 7: Execute order if decision is "go"
+# Step 7: Calculate SL/TP if enabled
+SL_PRICE=""
+TP_PRICE=""
+if [[ "$FINAL_DECISION" == "go" && -n "$ACTION" && "$SL_TP_ENABLED" == "true" ]]; then
+    echo "" >&2
+    echo "[Step 7] Calculating SL/TP..." >&2
+
+    # Determine entry price based on action
+    if [[ "$ACTION" == "Buy" ]]; then
+        ENTRY_PRICE="$ASK"
+    else
+        ENTRY_PRICE="$BID"
+    fi
+
+    # Calculate SL/TP
+    SL_TP_RESULT=$(calculate_sl_tp "$ENTRY_PRICE" "$ACTION" "$ATR_VALUE" "$SL_MULTIPLIER" "$TP_VALUE" "$DECIMAL_PLACES")
+    SL_PRICE=$(echo "$SL_TP_RESULT" | jq -r '.sl_price')
+    TP_PRICE=$(echo "$SL_TP_RESULT" | jq -r '.tp_price')
+    SL_DISTANCE=$(echo "$SL_TP_RESULT" | jq -r '.sl_distance')
+    TP_DISTANCE=$(echo "$SL_TP_RESULT" | jq -r '.tp_distance')
+
+    echo "  Entry Price: $ENTRY_PRICE" >&2
+    echo "  Stop Loss: $SL_PRICE (distance: $SL_DISTANCE)" >&2
+    echo "  Take Profit: $TP_PRICE (distance: $TP_DISTANCE)" >&2
+    echo "  Risk:Reward = 1:$TP_VALUE" >&2
+fi
+
+# Step 8: Execute order if decision is "go"
 if [[ "$FINAL_DECISION" == "go" && -n "$ACTION" ]]; then
     echo "" >&2
-    echo "[Step 7] Executing order..." >&2
+    echo "[Step 8] Executing order..." >&2
 
     if [[ "$DRY_RUN" == "true" ]]; then
         echo "  [DRY RUN] Would execute: $ACTION $TRADE_AMOUNT $DISPLAY_NAME" >&2
+        if [[ -n "$SL_PRICE" ]]; then
+            echo "  [DRY RUN] With SL: $SL_PRICE / TP: $TP_PRICE" >&2
+        fi
     else
-        ORDER_RESULT=$(place_order "$ACCOUNT_KEY" "$SAXO_UIC" "$ACTION" "$TRADE_AMOUNT" "$SAXO_ASSET_TYPE")
+        ORDER_RESULT=$(place_order "$ACCOUNT_KEY" "$SAXO_UIC" "$ACTION" "$TRADE_AMOUNT" "$SAXO_ASSET_TYPE" "$SL_PRICE" "$TP_PRICE")
         echo "$ORDER_RESULT" >&2
     fi
 else
     echo "" >&2
-    echo "[Step 7] No order executed (decision: $FINAL_DECISION)" >&2
+    echo "[Step 8] No order executed (decision: $FINAL_DECISION)" >&2
 fi
 
 # Output final result as JSON
 echo "" >&2
+
+# Handle SL/TP for JSON output
+SL_PRICE_JSON="${SL_PRICE:-null}"
+TP_PRICE_JSON="${TP_PRICE:-null}"
+if [[ "$SL_PRICE_JSON" != "null" ]]; then
+    SL_PRICE_JSON="$SL_PRICE"
+fi
+if [[ "$TP_PRICE_JSON" != "null" ]]; then
+    TP_PRICE_JSON="$TP_PRICE"
+fi
+
 FINAL_RESULT=$(jq -n \
     --arg decision "$FINAL_DECISION" \
     --arg symbol "$SYMBOL" \
@@ -279,6 +322,7 @@ FINAL_RESULT=$(jq -n \
     --arg trend_1h "$TREND_1H" \
     --arg trend_4h "$TREND_4H" \
     --arg volatility "$VOLATILITY" \
+    --argjson atr "$ATR_VALUE" \
     --arg ai_decision "$AI_DECISION" \
     --argjson ai_confidence "$AI_CONFIDENCE" \
     --arg ai_summary "$AI_SUMMARY" \
@@ -289,6 +333,9 @@ FINAL_RESULT=$(jq -n \
     --argjson ai_wait_for "$AI_WAIT_FOR" \
     --argjson bid "$BID" \
     --argjson ask "$ASK" \
+    --arg sl_price "$SL_PRICE" \
+    --arg tp_price "$TP_PRICE" \
+    --arg sl_tp_enabled "$SL_TP_ENABLED" \
     --argjson ai_full "$AI_RESULT" \
     '{
         decision: $decision,
@@ -303,7 +350,8 @@ FINAL_RESULT=$(jq -n \
             sell_conditions: $sell_conditions,
             trend_1h: $trend_1h,
             trend_4h: $trend_4h,
-            volatility: $volatility
+            volatility: $volatility,
+            atr: $atr
         },
         ai_analysis: {
             decision: $ai_decision,
@@ -321,14 +369,19 @@ FINAL_RESULT=$(jq -n \
             bid: $bid,
             ask: $ask
         },
+        sl_tp: {
+            enabled: ($sl_tp_enabled == "true"),
+            stop_loss: (if $sl_price == "" then null else ($sl_price | tonumber) end),
+            take_profit: (if $tp_price == "" then null else ($tp_price | tonumber) end)
+        },
         ai_full_response: $ai_full
     }')
 
 echo "$FINAL_RESULT"
 
-# Step 8: Send Discord notification
+# Step 9: Send Discord notification
 echo "" >&2
-echo "[Step 8] Sending Discord notification..." >&2
+echo "[Step 9] Sending Discord notification..." >&2
 if [[ -f "$SCRIPT_DIR/notify/discord.sh" ]]; then
     echo "$FINAL_RESULT" | "$SCRIPT_DIR/notify/discord.sh"
 else

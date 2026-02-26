@@ -59,6 +59,11 @@ NEXT_ACTIONS=$(echo "$RESULT" | jq -r '.next_actions // [] | if length > 0 then 
 BID=$(echo "$RESULT" | jq -r '.price.bid // "N/A"')
 ASK=$(echo "$RESULT" | jq -r '.price.ask // "N/A"')
 
+# SL/TP
+SL_TP_ENABLED=$(echo "$RESULT" | jq -r '.sl_tp.enabled // false')
+SL_PRICE=$(echo "$RESULT" | jq -r '.sl_tp.stop_loss // null')
+TP_PRICE=$(echo "$RESULT" | jq -r '.sl_tp.take_profit // null')
+
 # Set color based on decision
 if [[ "$DECISION" == "go" ]]; then
     if [[ "$ACTION" == "Buy" ]]; then
@@ -80,6 +85,13 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 AI_SUMMARY_SHORT="${AI_SUMMARY:0:200}"
 LEARNING_EXAMPLE_SHORT="${LEARNING_EXAMPLE:0:300}"
 NEXT_ACTIONS_SHORT="${NEXT_ACTIONS:0:300}"
+
+# Build SL/TP display string
+if [[ "$SL_TP_ENABLED" == "true" && "$SL_PRICE" != "null" && "$TP_PRICE" != "null" ]]; then
+    SL_TP_VALUE="SL: ${SL_PRICE}\nTP: ${TP_PRICE}"
+else
+    SL_TP_VALUE="-"
+fi
 
 PAYLOAD=$(jq -n \
     --arg emoji "$EMOJI" \
@@ -104,6 +116,7 @@ PAYLOAD=$(jq -n \
     --arg next_actions "$NEXT_ACTIONS_SHORT" \
     --arg bid "$BID" \
     --arg ask "$ASK" \
+    --arg sl_tp "$SL_TP_VALUE" \
     --argjson color "$COLOR" \
     --arg timestamp "$TIMESTAMP" \
     '{
@@ -140,6 +153,11 @@ PAYLOAD=$(jq -n \
                 {
                     name: "💰 価格",
                     value: "Bid: \($bid)\nAsk: \($ask)",
+                    inline: true
+                },
+                {
+                    name: "🛡️ SL/TP",
+                    value: $sl_tp,
                     inline: true
                 },
                 {

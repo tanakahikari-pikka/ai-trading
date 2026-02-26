@@ -43,11 +43,19 @@ load_currency_config() {
     SECONDARY_TIMEFRAME=$(jq -r '.timeframes.secondary' "$config_file")
     SECONDARY_RANGE=$(jq -r '.timeframes.secondary_range' "$config_file")
 
+    # SL/TP settings
+    SL_TP_ENABLED=$(jq -r '.sl_tp.enabled // false' "$config_file")
+    SL_MODE=$(jq -r '.sl_tp.stop_loss.mode // "atr"' "$config_file")
+    SL_MULTIPLIER=$(jq -r '.sl_tp.stop_loss.multiplier // 1.5' "$config_file")
+    TP_MODE=$(jq -r '.sl_tp.take_profit.mode // "ratio"' "$config_file")
+    TP_VALUE=$(jq -r '.sl_tp.take_profit.value // 2.0' "$config_file")
+
     # Export for subshells
-    export SYMBOL YAHOO_SYMBOL SAXO_UIC SAXO_ASSET_TYPE DISPLAY_NAME
+    export SYMBOL YAHOO_SYMBOL SAXO_UIC SAXO_ASSET_TYPE DISPLAY_NAME DESCRIPTION
     export PIP_SIZE DECIMAL_PLACES DEFAULT_PERCENTAGE
     export RSI_OVERBOUGHT RSI_OVERSOLD RSI_BUY_THRESHOLD RSI_SELL_THRESHOLD MIN_CONDITIONS
     export PRIMARY_TIMEFRAME PRIMARY_RANGE SECONDARY_TIMEFRAME SECONDARY_RANGE
+    export SL_TP_ENABLED SL_MODE SL_MULTIPLIER TP_MODE TP_VALUE
 
     return 0
 }

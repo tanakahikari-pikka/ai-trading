@@ -160,11 +160,120 @@ if ルールベース == Buy/Sell:
 - 1回の取引で残高の10%まで
 - AIによるリスク判断でのオーバーライド
 
+---
+
+## Stop Loss / Take Profit 設定
+
+### 概要
+
+エントリー時に自動でStop Loss（損切り）とTake Profit（利確）の関連注文を設定する。
+ATR（Average True Range）を基準に動的に計算し、リスクリワード比 1:2 を維持する。
+
+### 計算方式
+
+| 項目 | 計算方法 | 例（USDJPY, ATR=0.50） |
+|------|----------|------------------------|
+| Stop Loss | エントリー価格 ± (ATR × 1.5) | Buy@150.00 → SL: 149.25 |
+| Take Profit | エントリー価格 ± (SL幅 × 2.0) | TP: 151.50 |
+
+### 方向による計算
+
+**Buy の場合:**
+```
+SL価格 = エントリー価格 - (ATR × SL倍率)
+TP価格 = エントリー価格 + (SL幅 × リスクリワード比)
+```
+
+**Sell の場合:**
+```
+SL価格 = エントリー価格 + (ATR × SL倍率)
+TP価格 = エントリー価格 - (SL幅 × リスクリワード比)
+```
+
+### 設定パラメータ
+
+| パラメータ | デフォルト値 | 説明 |
+|-----------|-------------|------|
+| `sl_tp.enabled` | `true` | SL/TP機能の有効/無効 |
+| `sl_tp.stop_loss.mode` | `"atr"` | 計算モード（atr/pips/percentage） |
+| `sl_tp.stop_loss.multiplier` | `1.5` | ATR倍率 |
+| `sl_tp.take_profit.mode` | `"ratio"` | 計算モード（ratio/atr/pips/percentage） |
+| `sl_tp.take_profit.value` | `2.0` | リスクリワード比 |
+
+### 通貨設定例（config/currencies/*.json）
+
+```json
+{
+  "symbol": "USDJPY",
+  "sl_tp": {
+    "enabled": true,
+    "stop_loss": {
+      "mode": "atr",
+      "multiplier": 1.5
+    },
+    "take_profit": {
+      "mode": "ratio",
+      "value": 2.0
+    }
+  }
+}
+```
+
+### Saxo Bank API 発注形式
+
+エントリー注文と同時に `Orders` 配列で関連注文を設定：
+
+```json
+{
+  "Amount": 10000,
+  "BuySell": "Buy",
+  "OrderType": "Market",
+  "Uic": 42,
+  "AssetType": "FxSpot",
+  "ManualOrder": true,
+  "OrderDuration": { "DurationType": "DayOrder" },
+  "Orders": [
+    {
+      "BuySell": "Sell",
+      "OrderPrice": 149.25,
+      "OrderType": "Stop",
+      "ManualOrder": true,
+      "OrderDuration": { "DurationType": "GoodTillCancel" }
+    },
+    {
+      "BuySell": "Sell",
+      "OrderPrice": 151.50,
+      "OrderType": "Limit",
+      "ManualOrder": true,
+      "OrderDuration": { "DurationType": "GoodTillCancel" }
+    }
+  ]
+}
+```
+
+### 将来拡張: AI による動的調整
+
+静的設定で動作確認後、AIからの判断で SL/TP 値を上書きする機能を追加予定：
+
+```json
+{
+  "decision": {
+    "action": "go",
+    "direction": "Buy"
+  },
+  "sl_tp_override": {
+    "stop_loss": 149.10,
+    "take_profit": 152.00,
+    "reason": "直近サポートライン考慮"
+  }
+}
+```
+
 ### 今後検討
 
-- ストップロス自動設定
 - 日次/週次の損失上限
 - 連続損失時の休止ルール
+- トレーリングストップ対応
 
 ---
 
@@ -190,3 +299,4 @@ if ルールベース == Buy/Sell:
 |------|----------|
 | 2026-02-27 | 初版作成。ルールベース強化 + AI情報強化の設計を記載 |
 | 2026-02-27 | AI分析レスポンス仕様書を追加。教育的フィードバック機能を定義 |
+| 2026-02-27 | Stop Loss / Take Profit 仕様を追加。ATR基準 × リスクリワード 1:2 |
