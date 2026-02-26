@@ -25,6 +25,10 @@ jobs:
           sudo apt-get install -y jq curl
 
       - name: Run Auto Trade
+        env:
+          SAXO_ACCESS_TOKEN: ${{ secrets.SAXO_ACCESS_TOKEN }}
+          SAXO_BASE_URL: https://gateway.saxobank.com/sim/openapi
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           chmod +x scripts/*.sh scripts/**/*.sh
           ./scripts/auto-trade.sh
