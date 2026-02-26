@@ -1,14 +1,30 @@
-name: Auto Trade USD/JPY
+name: Auto Trade
 
 on:
   schedule:
     - cron: '0 * * * *'  # 毎時0分 (UTC)
-  workflow_dispatch:      # 手動実行
+  workflow_dispatch:
+    inputs:
+      currency:
+        description: '通貨ペア (空欄で全通貨)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - USDJPY
+          - EURUSD
+          - GBPUSD
+          - EURJPY
+          - XAUUSD
 
 jobs:
   trade:
     runs-on: ubuntu-latest
     environment: prod
+    strategy:
+      fail-fast: false
+      matrix:
+        currency: ${{ github.event.inputs.currency != '' && fromJSON(format('["{0}"]', github.event.inputs.currency)) || fromJSON('["USDJPY", "EURUSD", "GBPUSD", "EURJPY", "XAUUSD"]') }}
 
     steps:
       - name: Checkout
@@ -23,9 +39,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl
+          sudo apt-get install -y jq curl bc
 
-      - name: Run Auto Trade
+      - name: Run Auto Trade (${{ matrix.currency }})
         env:
           SAXO_ACCESS_TOKEN: ${{ secrets.SAXO_ACCESS_TOKEN }}
           SAXO_BASE_URL: https://gateway.saxobank.com/sim/openapi
@@ -33,9 +49,9 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           chmod +x scripts/*.sh scripts/**/*.sh
-          ./scripts/auto-trade.sh
+          ./scripts/auto-trade.sh ${{ matrix.currency }}
 
       - name: Summary
         if: always()
         run: |
-          echo "Auto trade workflow completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Auto trade (${{ matrix.currency }}) completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
