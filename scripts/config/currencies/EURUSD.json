@@ -1,0 +1,24 @@
+{
+  "symbol": "EURUSD",
+  "yahoo_symbol": "EURUSD=X",
+  "saxo_uic": 21,
+  "saxo_asset_type": "FxSpot",
+  "display_name": "EUR/USD",
+  "description": "ユーロ/米ドル",
+  "pip_size": 0.0001,
+  "decimal_places": 5,
+  "default_percentage": 10,
+  "thresholds": {
+    "rsi_overbought": 70,
+    "rsi_oversold": 30,
+    "rsi_buy_threshold": 40,
+    "rsi_sell_threshold": 60,
+    "min_conditions": 2
+  },
+  "timeframes": {
+    "primary": "1h",
+    "primary_range": "10d",
+    "secondary": "1d",
+    "secondary_range": "30d"
+  }
+}
