@@ -33,7 +33,7 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           chmod +x scripts/*.sh scripts/**/*.sh
-          ./scripts/auto-trade.sh
+          ./scripts/auto-trade.sh USDJPY
 
       - name: Summary
         if: always()
