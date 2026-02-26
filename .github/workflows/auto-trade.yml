@@ -1,0 +1,49 @@
+name: Auto Trade USD/JPY
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # 毎時0分 (UTC)
+  workflow_dispatch:      # 手動実行
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .env
+        run: |
+          echo "SAXO_ACCESS_TOKEN=${{ secrets.SAXO_ACCESS_TOKEN }}" >> .env
+          echo "SAXO_BASE_URL=https://gateway.saxobank.com/sim/openapi" >> .env
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Run Auto Trade
+        uses: anthropics/claude-code-action@v1
+        with:
+          prompt: |
+            /saxo-auto-trade --auto
+
+            対象: USD/JPY
+            発注量: 残高の10%
+
+            以下の手順で実行してください：
+            1. USD/JPY の価格データを取得（Yahoo Finance）
+            2. RSI(14) を計算
+            3. Saxo からリアルタイム価格を取得
+            4. AI分析（トレンド・リスク評価）
+            5. 総合判断（go / not_order）
+            6. go の場合は残高10%で自動発注
+            7. 結果をJSON形式で出力
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Auto trade workflow completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
