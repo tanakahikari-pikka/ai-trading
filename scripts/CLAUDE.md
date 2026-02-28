@@ -92,7 +92,7 @@
 
 **フィルター:**
 - **ATRフィルター**: atr_ratio < 0.7 でシグナル抑制（レンジ相場対策）
-- **MTFフィルター**: Buy は SMA20 > SMA50、Sell は SMA20 < SMA50 の場合のみ許可
+- **MTFフィルター**: 4h足で確認。Buy は 4h SMA20 > 4h SMA50、Sell は 4h SMA20 < 4h SMA50 の場合のみ許可
 
 ## Stop Loss / Take Profit
 

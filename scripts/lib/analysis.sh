@@ -84,3 +84,5 @@ extract_buy_conditions() { echo "$1" | jq -r '.rule_analysis.buy_conditions_met'
 extract_sell_conditions() { echo "$1" | jq -r '.rule_analysis.sell_conditions_met'; }
 extract_volatility() { echo "$1" | jq -r '.indicators.atr.volatility'; }
 extract_atr() { echo "$1" | jq -r '.indicators.atr.value // .indicators.atr_14 // 0'; }
+extract_sma20() { echo "$1" | jq -r '.indicators.sma_20 // 0'; }
+extract_sma50() { echo "$1" | jq -r '.indicators.sma_50 // 0'; }

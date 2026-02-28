@@ -74,12 +74,17 @@ else:
 
 ### MTFフィルター（マルチタイムフレーム確認）
 
-上位トレンドに逆行するエントリーをブロックする。
+**4h足**のトレンドで上位方向を確認し、逆行エントリーをブロックする。
 
-| 方向 | 許可条件 |
-|------|----------|
-| Buy | SMA(20) > SMA(50)（上昇トレンド） |
-| Sell | SMA(20) < SMA(50)（下降トレンド） |
+| 方向 | 許可条件（4h足） |
+|------|------------------|
+| Buy | 4h SMA(20) > 4h SMA(50)（上昇トレンド） |
+| Sell | 4h SMA(20) < 4h SMA(50)（下降トレンド） |
+
+**設計根拠:**
+- 1h足のMACD条件とMTFフィルターが重複していた問題を解消
+- 本来のMTF（上位時間軸確認）の意図を正しく実装
+- 1hでは短期的に買いシグナルが出ても、4hが下降トレンドならブロック
 
 ### ATRフィルター（レンジ相場抑制）
 
@@ -91,30 +96,42 @@ else:
 
 ### シグナル判定
 
+**Step 1: 1h足分析（analyze.sh）**
 ```
 # ATRフィルター（レンジ相場抑制）
 if atr_ratio < 0.7:
     SIGNAL = "Wait"  # 低ボラ = レンジ相場の可能性
 
 elif BUY_COUNT >= 2 AND BUY_COUNT > SELL_COUNT:
-    if SMA(20) > SMA(50):  # MTFフィルター
-        SIGNAL = "Buy"
-    else:
-        SIGNAL = "Wait"  # 上位トレンドに逆行
+    SIGNAL = "Buy"  # 条件到達（MTFフィルターは後段で適用）
 
 elif SELL_COUNT >= 2 AND SELL_COUNT > BUY_COUNT:
-    if SMA(20) < SMA(50):  # MTFフィルター
-        SIGNAL = "Sell"
-    else:
-        SIGNAL = "Wait"  # 上位トレンドに逆行
+    SIGNAL = "Sell"  # 条件到達（MTFフィルターは後段で適用）
 
 else:
     SIGNAL = "Wait"
 ```
 
+**Step 2: MTFフィルター（auto-trade.sh）**
+```
+# 4h足のSMA20 vs SMA50 でフィルター
+if RULE_SIGNAL == "Buy":
+    if 4h_SMA20 > 4h_SMA50:  # 4hが上昇トレンド
+        → 通過
+    else:
+        → Wait（上位トレンドに逆行）
+
+elif RULE_SIGNAL == "Sell":
+    if 4h_SMA20 < 4h_SMA50:  # 4hが下降トレンド
+        → 通過
+    else:
+        → Wait（上位トレンドに逆行）
+```
+
 ### 実装
 
-`scripts/indicators/analyze.sh`
+- 1h分析: `scripts/indicators/analyze.sh`
+- MTFフィルター: `scripts/auto-trade.sh`
 
 ---
 

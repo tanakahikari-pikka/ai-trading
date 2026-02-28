@@ -104,7 +104,7 @@ ANALYSIS_1H=$(echo "$CHART_DATA_1H" | run_technical_analysis)
 echo "  Analyzing $SECONDARY_TIMEFRAME timeframe..." >&2
 ANALYSIS_4H=$(echo "$CHART_DATA_4H" | run_technical_analysis)
 
-# Extract key values
+# Extract key values from 1h analysis
 RSI=$(extract_rsi "$ANALYSIS_1H")
 RULE_SIGNAL=$(extract_signal "$ANALYSIS_1H")
 TREND_1H=$(extract_trend "$ANALYSIS_1H")
@@ -113,6 +113,30 @@ BUY_CONDITIONS=$(extract_buy_conditions "$ANALYSIS_1H")
 SELL_CONDITIONS=$(extract_sell_conditions "$ANALYSIS_1H")
 VOLATILITY=$(extract_volatility "$ANALYSIS_1H")
 ATR_VALUE=$(extract_atr "$ANALYSIS_1H")
+
+# Extract 4h SMA values for MTF filter
+SMA20_4H=$(extract_sma20 "$ANALYSIS_4H")
+SMA50_4H=$(extract_sma50 "$ANALYSIS_4H")
+
+# Apply MTF filter using 4h timeframe
+MTF_BLOCKED=false
+if [[ "$RULE_SIGNAL" == "Buy" ]]; then
+    # Buy only allowed when 4h SMA20 > SMA50 (uptrend)
+    MTF_OK=$(echo "$SMA20_4H > $SMA50_4H" | bc -l 2>/dev/null || echo 0)
+    if [[ "$MTF_OK" != "1" ]]; then
+        RULE_SIGNAL="Wait"
+        MTF_BLOCKED=true
+        echo "  [MTF Filter] Buy blocked: 4h SMA20=$SMA20_4H < SMA50=$SMA50_4H (downtrend)" >&2
+    fi
+elif [[ "$RULE_SIGNAL" == "Sell" ]]; then
+    # Sell only allowed when 4h SMA20 < SMA50 (downtrend)
+    MTF_OK=$(echo "$SMA20_4H < $SMA50_4H" | bc -l 2>/dev/null || echo 0)
+    if [[ "$MTF_OK" != "1" ]]; then
+        RULE_SIGNAL="Wait"
+        MTF_BLOCKED=true
+        echo "  [MTF Filter] Sell blocked: 4h SMA20=$SMA20_4H > SMA50=$SMA50_4H (uptrend)" >&2
+    fi
+fi
 
 echo "" >&2
 echo "  === $PRIMARY_TIMEFRAME Analysis ===" >&2
@@ -124,8 +148,14 @@ echo "  Sell conditions: $SELL_CONDITIONS/4" >&2
 echo "  Volatility: $VOLATILITY" >&2
 echo "  ATR(14): $ATR_VALUE" >&2
 echo "" >&2
-echo "  === $SECONDARY_TIMEFRAME Analysis ===" >&2
+echo "  === $SECONDARY_TIMEFRAME Analysis (MTF Filter) ===" >&2
 echo "  Trend: $TREND_4H" >&2
+echo "  SMA20: $SMA20_4H / SMA50: $SMA50_4H" >&2
+if [[ "$MTF_BLOCKED" == "true" ]]; then
+    echo "  MTF Filter: BLOCKED" >&2
+else
+    echo "  MTF Filter: PASSED" >&2
+fi
 
 # Step 3: Get real-time price from Saxo
 echo "" >&2

@@ -142,7 +142,8 @@ SELL_COUNT=$((SELL_RSI + SELL_NEAR_SMA20 + SELL_MACD + SELL_BB))
 # Check ATR filter (range market suppression)
 LOW_VOLATILITY=$(echo "$ATR_RATIO < 0.7" | bc -l 2>/dev/null || echo 0)
 
-# Determine signal (2/4 threshold + ATR filter + MTF alignment)
+# Determine signal (2/4 threshold + ATR filter)
+# Note: MTF filter is applied in auto-trade.sh using 4h timeframe data
 SIGNAL="Wait"
 
 # ATR filter: suppress signals in low volatility (range market)
@@ -150,21 +151,9 @@ if [[ $LOW_VOLATILITY -eq 1 ]]; then
     SIGNAL="Wait"
     echo "  [ATR Filter] Signal blocked: atr_ratio=$ATR_RATIO < 0.7 (low volatility / range market)" >&2
 elif [[ $BUY_COUNT -ge 2 && $BUY_COUNT -gt $SELL_COUNT ]]; then
-    # Buy only allowed when SMA20 > SMA50 (uptrend)
-    if [[ $SMA_TREND_UP -eq 1 ]]; then
-        SIGNAL="Buy"
-    else
-        SIGNAL="Wait"
-        echo "  [MTF Filter] Buy blocked: SMA20 < SMA50 (downtrend)" >&2
-    fi
+    SIGNAL="Buy"
 elif [[ $SELL_COUNT -ge 2 && $SELL_COUNT -gt $BUY_COUNT ]]; then
-    # Sell only allowed when SMA20 < SMA50 (downtrend)
-    if [[ $SMA_TREND_DOWN -eq 1 ]]; then
-        SIGNAL="Sell"
-    else
-        SIGNAL="Wait"
-        echo "  [MTF Filter] Sell blocked: SMA20 > SMA50 (uptrend)" >&2
-    fi
+    SIGNAL="Sell"
 fi
 
 # Determine trend
@@ -183,7 +172,7 @@ echo "Bollinger %B: $PERCENT_B (buy<30, sell>70)" >&2
 echo "SMA20 Proximity: buy=$BUY_NEAR_SMA20 (SMA20-ATR=$SMA20_BUY_LOWER to SMA20=$SMA20) sell=$SELL_NEAR_SMA20 (SMA20=$SMA20 to SMA20+ATR=$SMA20_SELL_UPPER)" >&2
 echo "SMA20 Slope: up=$SMA20_SLOPE_UP down=$SMA20_SLOPE_DOWN (AI参考用)" >&2
 echo "ATR Filter: atr_ratio=$ATR_RATIO (low_vol=$LOW_VOLATILITY, threshold=0.7)" >&2
-echo "MTF Filter: SMA20 vs SMA50 = $(if [[ $SMA_TREND_UP -eq 1 ]]; then echo 'Uptrend'; elif [[ $SMA_TREND_DOWN -eq 1 ]]; then echo 'Downtrend'; else echo 'Flat'; fi)" >&2
+echo "1h SMA Trend: SMA20 vs SMA50 = $(if [[ $SMA_TREND_UP -eq 1 ]]; then echo 'Uptrend'; elif [[ $SMA_TREND_DOWN -eq 1 ]]; then echo 'Downtrend'; else echo 'Flat'; fi) (参考用、MTFフィルターは4hで適用)" >&2
 echo "Signal: $SIGNAL" >&2
 echo "Trend: $TREND" >&2
 
