@@ -6,8 +6,8 @@
 # Arguments:
 #   $1 - RULE_SIGNAL (Buy/Sell/Wait)
 #   $2 - VOLATILITY (low/medium/high)
-#   $3 - BUY_CONDITIONS (0-4)
-#   $4 - SELL_CONDITIONS (0-4)
+#   $3 - BUY_CONDITIONS (0-3)
+#   $4 - SELL_CONDITIONS (0-3)
 # Returns:
 #   JSON with skip decision and reason
 check_prefilter() {
@@ -22,7 +22,7 @@ check_prefilter() {
     # Skip only if BOTH buy and sell conditions are below threshold
     if [[ "$buy_conditions" -lt 2 && "$sell_conditions" -lt 2 ]]; then
         skip="true"
-        reason="No clear signal (Buy: ${buy_conditions}/4, Sell: ${sell_conditions}/4)"
+        reason="No clear signal (Buy: ${buy_conditions}/3, Sell: ${sell_conditions}/3)"
     elif [[ "$volatility" == "low" ]]; then
         skip="true"
         reason="Low volatility - insufficient price movement"

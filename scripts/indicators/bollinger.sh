@@ -61,9 +61,11 @@ UPPER=$(echo "$BB_DATA" | jq -r '.upper | . * 100 | round / 100')
 MIDDLE=$(echo "$BB_DATA" | jq -r '.middle | . * 100 | round / 100')
 LOWER=$(echo "$BB_DATA" | jq -r '.lower | . * 100 | round / 100')
 
-# Add position relative to bands
+# Add position relative to bands and band width metrics
 BB_DATA=$(echo "$BB_DATA" | jq --arg price "$CURRENT_PRICE" '
     ($price | tonumber) as $p |
+    # Band width as percentage of middle band (for squeeze detection)
+    ((.upper - .lower) / .middle * 100) as $band_width_pct |
     . + {
         current_price: $p,
         position: (
@@ -73,7 +75,8 @@ BB_DATA=$(echo "$BB_DATA" | jq --arg price "$CURRENT_PRICE" '
             else "below_lower"
             end
         ),
-        percent_b: (($p - .lower) / (.upper - .lower) * 100)
+        percent_b: (($p - .lower) / (.upper - .lower) * 100),
+        band_width_pct: ($band_width_pct | . * 100 | round / 100)
     }
 ')
 

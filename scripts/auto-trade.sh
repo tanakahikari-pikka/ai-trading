@@ -143,8 +143,8 @@ echo "  === $PRIMARY_TIMEFRAME Analysis ===" >&2
 echo "  RSI(14): $RSI" >&2
 echo "  Signal: $RULE_SIGNAL" >&2
 echo "  Trend: $TREND_1H" >&2
-echo "  Buy conditions: $BUY_CONDITIONS/4" >&2
-echo "  Sell conditions: $SELL_CONDITIONS/4" >&2
+echo "  Buy conditions: $BUY_CONDITIONS/3" >&2
+echo "  Sell conditions: $SELL_CONDITIONS/3" >&2
 echo "  Volatility: $VOLATILITY" >&2
 echo "  ATR(14): $ATR_VALUE" >&2
 echo "" >&2

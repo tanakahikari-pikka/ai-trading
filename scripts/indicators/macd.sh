@@ -31,8 +31,11 @@ if [[ "$PRICE_COUNT" -lt "$MIN_REQUIRED" ]]; then
     exit 1
 fi
 
+# Fresh cross lookback period (configurable per currency, default: 5)
+LOOKBACK=${FRESH_CROSS_LOOKBACK:-5}
+
 # Calculate MACD with histogram history
-MACD_DATA=$(echo "$CLOSES" | jq --arg fast "$FAST" --arg slow "$SLOW" --arg signal "$SIGNAL" '
+MACD_DATA=$(echo "$CLOSES" | jq --arg fast "$FAST" --arg slow "$SLOW" --arg signal "$SIGNAL" --argjson lookback "$LOOKBACK" '
     ($fast | tonumber) as $f |
     ($slow | tonumber) as $s |
     ($signal | tonumber) as $sig |
@@ -73,8 +76,8 @@ MACD_DATA=$(echo "$CLOSES" | jq --arg fast "$FAST" --arg slow "$SLOW" --arg sign
     ($signal_series | last) as $signal_line |
     ($histogram_series | last) as $histogram |
 
-    # Get last 5 histogram values for momentum/fresh cross detection
-    ($histogram_series | .[-5:]) as $hist_last5 |
+    # Get last N histogram values for momentum/fresh cross detection (configurable)
+    ($histogram_series | .[-$lookback:]) as $hist_last5 |
 
     {
         macd: ($macd | . * 10000 | round / 10000),
