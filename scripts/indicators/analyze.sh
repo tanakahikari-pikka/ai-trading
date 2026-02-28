@@ -97,10 +97,13 @@ BB_MIDDLE=${BB_MIDDLE:-0}
 BB_BUY_THRESHOLD=$(echo "$BB_LOWER + ($BB_MIDDLE - $BB_LOWER) * 0.3" | bc -l 2>/dev/null || echo 0)
 BB_SELL_THRESHOLD=$(echo "$BB_UPPER - ($BB_UPPER - $BB_MIDDLE) * 0.3" | bc -l 2>/dev/null || echo 0)
 
-# Calculate SMA20 proximity band (price within ±1% of SMA20)
-SMA20_BAND_UPPER=$(echo "$SMA20 * 1.01" | bc -l 2>/dev/null || echo 0)
-SMA20_BAND_LOWER=$(echo "$SMA20 * 0.99" | bc -l 2>/dev/null || echo 0)
-NEAR_SMA20=$(echo "$CURRENT_PRICE > $SMA20_BAND_LOWER && $CURRENT_PRICE < $SMA20_BAND_UPPER" | bc -l 2>/dev/null || echo 0)
+# Calculate SMA20 proximity bands (ATR-based, directional)
+# Buy: SMA20 - ATR < price <= SMA20 (pullback from below)
+# Sell: SMA20 < price < SMA20 + ATR (retracement from above)
+SMA20_BUY_LOWER=$(echo "$SMA20 - $ATR" | bc -l 2>/dev/null || echo 0)
+SMA20_SELL_UPPER=$(echo "$SMA20 + $ATR" | bc -l 2>/dev/null || echo 0)
+BUY_NEAR_SMA20=$(echo "$CURRENT_PRICE > $SMA20_BUY_LOWER && $CURRENT_PRICE <= $SMA20" | bc -l 2>/dev/null || echo 0)
+SELL_NEAR_SMA20=$(echo "$CURRENT_PRICE > $SMA20 && $CURRENT_PRICE < $SMA20_SELL_UPPER" | bc -l 2>/dev/null || echo 0)
 
 # Determine SMA trend alignment (MTF filter)
 SMA_TREND_UP=$(echo "$SMA20 > $SMA50" | bc -l 2>/dev/null || echo 0)
@@ -121,14 +124,14 @@ fi
 # Rule-based analysis (2/4 conditions for signal)
 # Buy conditions
 BUY_RSI=$(echo "$RSI < $RSI_BUY_THRESHOLD" | bc -l 2>/dev/null || echo 0)
-BUY_NEAR_SMA20=$NEAR_SMA20  # Price within ±1% of SMA20 (pullback detection)
+# BUY_NEAR_SMA20 already calculated above (SMA20 - ATR < price <= SMA20)
 BUY_MACD=$(echo "$MACD > $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
 BUY_BB=$(echo "$CURRENT_PRICE < $BB_BUY_THRESHOLD" | bc -l 2>/dev/null || echo 0)
 BUY_COUNT=$((BUY_RSI + BUY_NEAR_SMA20 + BUY_MACD + BUY_BB))
 
 # Sell conditions
 SELL_RSI=$(echo "$RSI > $RSI_SELL_THRESHOLD" | bc -l 2>/dev/null || echo 0)
-SELL_NEAR_SMA20=$NEAR_SMA20  # Price within ±1% of SMA20 (retracement detection)
+# SELL_NEAR_SMA20 already calculated above (SMA20 < price < SMA20 + ATR)
 SELL_MACD=$(echo "$MACD < $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
 SELL_BB=$(echo "$CURRENT_PRICE > $BB_SELL_THRESHOLD" | bc -l 2>/dev/null || echo 0)
 SELL_COUNT=$((SELL_RSI + SELL_NEAR_SMA20 + SELL_MACD + SELL_BB))
@@ -173,7 +176,7 @@ echo "--- Rule Analysis ---" >&2
 echo "RSI Thresholds: buy<$RSI_BUY_THRESHOLD sell>$RSI_SELL_THRESHOLD (high_vol=$HIGH_VOLATILITY)" >&2
 echo "Buy conditions: $BUY_COUNT/4 (RSI:$BUY_RSI NEAR_SMA20:$BUY_NEAR_SMA20 MACD:$BUY_MACD BB:$BUY_BB)" >&2
 echo "Sell conditions: $SELL_COUNT/4 (RSI:$SELL_RSI NEAR_SMA20:$SELL_NEAR_SMA20 MACD:$SELL_MACD BB:$SELL_BB)" >&2
-echo "SMA20 Proximity: near=$NEAR_SMA20 (band: $SMA20_BAND_LOWER - $SMA20_BAND_UPPER)" >&2
+echo "SMA20 Proximity: buy=$BUY_NEAR_SMA20 (SMA20-ATR=$SMA20_BUY_LOWER to SMA20=$SMA20) sell=$SELL_NEAR_SMA20 (SMA20=$SMA20 to SMA20+ATR=$SMA20_SELL_UPPER)" >&2
 echo "SMA20 Slope: up=$SMA20_SLOPE_UP down=$SMA20_SLOPE_DOWN (AI参考用)" >&2
 echo "ATR Filter: atr_ratio=$ATR_RATIO (low_vol=$LOW_VOLATILITY, threshold=0.7)" >&2
 echo "MTF Filter: SMA20 vs SMA50 = $(if [[ $SMA_TREND_UP -eq 1 ]]; then echo 'Uptrend'; elif [[ $SMA_TREND_DOWN -eq 1 ]]; then echo 'Downtrend'; else echo 'Flat'; fi)" >&2
@@ -218,9 +221,8 @@ OUTPUT=$(jq -n \
     --argjson sell_bb "${SELL_BB:-0}" \
     --argjson sma_trend_up "${SMA_TREND_UP:-0}" \
     --argjson sma_trend_down "${SMA_TREND_DOWN:-0}" \
-    --argjson near_sma20 "${NEAR_SMA20:-0}" \
-    --argjson sma20_band_upper "${SMA20_BAND_UPPER:-0}" \
-    --argjson sma20_band_lower "${SMA20_BAND_LOWER:-0}" \
+    --argjson sma20_buy_lower "${SMA20_BUY_LOWER:-0}" \
+    --argjson sma20_sell_upper "${SMA20_SELL_UPPER:-0}" \
     --argjson sma20_slope_up "${SMA20_SLOPE_UP:-0}" \
     --argjson sma20_slope_down "${SMA20_SLOPE_DOWN:-0}" \
     '{
@@ -270,9 +272,10 @@ OUTPUT=$(jq -n \
                 }
             },
             sma20_proximity: {
-                near_sma20: ($near_sma20 == 1),
-                band_upper: $sma20_band_upper,
-                band_lower: $sma20_band_lower
+                buy_zone: ($buy_near_sma20 == 1),
+                sell_zone: ($sell_near_sma20 == 1),
+                buy_lower: $sma20_buy_lower,
+                sell_upper: $sma20_sell_upper
             },
             sma20_slope: {
                 slope_up: ($sma20_slope_up == 1),
