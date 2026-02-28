@@ -132,16 +132,33 @@ BUY_RSI=$(echo "$RSI < $RSI_BUY_THRESHOLD" | bc -l 2>/dev/null || echo 0)
 BUY_BB=$(echo "$PERCENT_B < 30" | bc -l 2>/dev/null || echo 0)
 BUY_POSITION_COUNT=$((BUY_RSI + BUY_NEAR_SMA20 + BUY_BB))
 
-# Buy momentum conditions (2 conditions, need 1)
+# Buy momentum conditions
+# Prerequisite: MACD > Signal (crossed)
 BUY_MACD=$(echo "$MACD > $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
+
+# Fresh cross detection: zero cross (negative -> positive) within last 5 bars
+# Check if any of the first 4 bars are negative AND the last bar is positive
+BUY_FRESH_CROSS=$(echo "$HIST_HISTORY" | jq '
+    if length >= 5 then
+        ([.[0:4][] | select(. < 0)] | length > 0) and .[-1] > 0
+        | if . then 1 else 0 end
+    elif length >= 3 then
+        # Fallback for shorter history: check if first bar negative, last positive
+        .[0] < 0 and .[-1] > 0
+        | if . then 1 else 0 end
+    else 0 end
+')
+
 # Histogram increasing: hist[-1] > hist[-2] > hist[-3] (momentum recovery)
 BUY_HIST_INCREASING=$(echo "$HIST_HISTORY" | jq '
     if length >= 3 then
-        (.[2] > .[1] and .[1] > .[0]) | if . then 1 else 0 end
+        (.[-1] > .[-2] and .[-2] > .[-3]) | if . then 1 else 0 end
     else 0 end
 ')
-BUY_MOMENTUM_COUNT=$((BUY_MACD > 0 ? 1 : 0))
-if [[ $BUY_HIST_INCREASING -eq 1 ]]; then
+
+# Momentum fires only if: MACD > Signal AND (fresh cross OR histogram increasing)
+BUY_MOMENTUM_COUNT=0
+if [[ $BUY_MACD -eq 1 && ($BUY_FRESH_CROSS -eq 1 || $BUY_HIST_INCREASING -eq 1) ]]; then
     BUY_MOMENTUM_COUNT=1
 fi
 
@@ -155,16 +172,33 @@ SELL_RSI=$(echo "$RSI > $RSI_SELL_THRESHOLD" | bc -l 2>/dev/null || echo 0)
 SELL_BB=$(echo "$PERCENT_B > 70" | bc -l 2>/dev/null || echo 0)
 SELL_POSITION_COUNT=$((SELL_RSI + SELL_NEAR_SMA20 + SELL_BB))
 
-# Sell momentum conditions (2 conditions, need 1)
+# Sell momentum conditions
+# Prerequisite: MACD < Signal (crossed)
 SELL_MACD=$(echo "$MACD < $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
+
+# Fresh cross detection: zero cross (positive -> negative) within last 5 bars
+# Check if any of the first 4 bars are positive AND the last bar is negative
+SELL_FRESH_CROSS=$(echo "$HIST_HISTORY" | jq '
+    if length >= 5 then
+        ([.[0:4][] | select(. > 0)] | length > 0) and .[-1] < 0
+        | if . then 1 else 0 end
+    elif length >= 3 then
+        # Fallback for shorter history: check if first bar positive, last negative
+        .[0] > 0 and .[-1] < 0
+        | if . then 1 else 0 end
+    else 0 end
+')
+
 # Histogram decreasing: hist[-1] < hist[-2] < hist[-3] (momentum fading)
 SELL_HIST_DECREASING=$(echo "$HIST_HISTORY" | jq '
     if length >= 3 then
-        (.[2] < .[1] and .[1] < .[0]) | if . then 1 else 0 end
+        (.[-1] < .[-2] and .[-2] < .[-3]) | if . then 1 else 0 end
     else 0 end
 ')
-SELL_MOMENTUM_COUNT=$((SELL_MACD > 0 ? 1 : 0))
-if [[ $SELL_HIST_DECREASING -eq 1 ]]; then
+
+# Momentum fires only if: MACD < Signal AND (fresh cross OR histogram decreasing)
+SELL_MOMENTUM_COUNT=0
+if [[ $SELL_MACD -eq 1 && ($SELL_FRESH_CROSS -eq 1 || $SELL_HIST_DECREASING -eq 1) ]]; then
     SELL_MOMENTUM_COUNT=1
 fi
 
@@ -209,9 +243,9 @@ fi
 echo "--- Rule Analysis (Category-based) ---" >&2
 echo "RSI Thresholds: buy<$RSI_BUY_THRESHOLD sell>$RSI_SELL_THRESHOLD (high_vol=$HIGH_VOLATILITY)" >&2
 echo "Buy Position: $BUY_POSITION_COUNT/3 (RSI:$BUY_RSI SMA20:$BUY_NEAR_SMA20 BB:$BUY_BB)" >&2
-echo "Buy Momentum: $BUY_MOMENTUM_COUNT/1 (MACD:$BUY_MACD HistInc:$BUY_HIST_INCREASING)" >&2
+echo "Buy Momentum: $BUY_MOMENTUM_COUNT/1 (MACD>Sig:$BUY_MACD FreshX:$BUY_FRESH_CROSS HistInc:$BUY_HIST_INCREASING)" >&2
 echo "Sell Position: $SELL_POSITION_COUNT/3 (RSI:$SELL_RSI SMA20:$SELL_NEAR_SMA20 BB:$SELL_BB)" >&2
-echo "Sell Momentum: $SELL_MOMENTUM_COUNT/1 (MACD:$SELL_MACD HistDec:$SELL_HIST_DECREASING)" >&2
+echo "Sell Momentum: $SELL_MOMENTUM_COUNT/1 (MACD<Sig:$SELL_MACD FreshX:$SELL_FRESH_CROSS HistDec:$SELL_HIST_DECREASING)" >&2
 echo "Legacy counts: Buy=$BUY_COUNT/4 Sell=$SELL_COUNT/4" >&2
 echo "Bollinger %B: $PERCENT_B (buy<30, sell>70)" >&2
 echo "SMA20 Proximity: buy=$BUY_NEAR_SMA20 (SMA20-ATR=$SMA20_BUY_LOWER to SMA20=$SMA20) sell=$SELL_NEAR_SMA20 (SMA20=$SMA20 to SMA20+ATR=$SMA20_SELL_UPPER)" >&2
@@ -260,11 +294,13 @@ OUTPUT=$(jq -n \
     --argjson buy_macd "${BUY_MACD:-0}" \
     --argjson buy_bb "${BUY_BB:-0}" \
     --argjson buy_hist_increasing "${BUY_HIST_INCREASING:-0}" \
+    --argjson buy_fresh_cross "${BUY_FRESH_CROSS:-0}" \
     --argjson sell_rsi "${SELL_RSI:-0}" \
     --argjson sell_near_sma20 "${SELL_NEAR_SMA20:-0}" \
     --argjson sell_macd "${SELL_MACD:-0}" \
     --argjson sell_bb "${SELL_BB:-0}" \
     --argjson sell_hist_decreasing "${SELL_HIST_DECREASING:-0}" \
+    --argjson sell_fresh_cross "${SELL_FRESH_CROSS:-0}" \
     --argjson sma_trend_up "${SMA_TREND_UP:-0}" \
     --argjson sma_trend_down "${SMA_TREND_DOWN:-0}" \
     --argjson sma20_buy_lower "${SMA20_BUY_LOWER:-0}" \
@@ -330,6 +366,7 @@ OUTPUT=$(jq -n \
                     },
                     momentum: {
                         macd_bullish: ($buy_macd == 1),
+                        fresh_cross: ($buy_fresh_cross == 1),
                         histogram_increasing: ($buy_hist_increasing == 1)
                     }
                 },
@@ -341,6 +378,7 @@ OUTPUT=$(jq -n \
                     },
                     momentum: {
                         macd_bearish: ($sell_macd == 1),
+                        fresh_cross: ($sell_fresh_cross == 1),
                         histogram_decreasing: ($sell_hist_decreasing == 1)
                     }
                 }
