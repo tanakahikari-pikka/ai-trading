@@ -184,14 +184,23 @@ PAYLOAD=$(jq -n \
         }]
     }')
 
+# Determine which webhook to use
+if [[ "$DECISION" == "go" && -n "$DISCORD_ENTRY_WEBHOOK_URL" ]]; then
+    TARGET_WEBHOOK="$DISCORD_ENTRY_WEBHOOK_URL"
+    WEBHOOK_TYPE="entry"
+else
+    TARGET_WEBHOOK="$DISCORD_WEBHOOK_URL"
+    WEBHOOK_TYPE="default"
+fi
+
 # Send to Discord
 RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" \
-    "$DISCORD_WEBHOOK_URL")
+    "$TARGET_WEBHOOK")
 
 if [[ "$RESPONSE" == "204" || "$RESPONSE" == "200" ]]; then
-    echo "Discord notification sent successfully" >&2
+    echo "Discord notification sent successfully ($WEBHOOK_TYPE)" >&2
 else
     echo "Failed to send Discord notification (HTTP $RESPONSE)" >&2
 fi
