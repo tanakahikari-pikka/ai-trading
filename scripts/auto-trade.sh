@@ -229,10 +229,6 @@ if [[ "$SKIP_AI" == "true" ]]; then
     AI_CONFIDENCE=0
     AI_SUMMARY="$SKIP_REASON"
     AI_RISK="N/A"
-    AI_LEARNING_TOPIC=""
-    AI_LEARNING_EXAMPLE=""
-    AI_RECOMMENDATION="様子見"
-    AI_WAIT_FOR="[]"
 else
     # Step 5: AI Analysis with comprehensive data
     echo "" >&2
@@ -254,27 +250,18 @@ else
         AI_CONFIDENCE=0
         AI_SUMMARY="AI analysis unavailable"
         AI_RISK="unknown"
-        AI_LEARNING_TOPIC=""
-        AI_LEARNING_EXAMPLE=""
-        AI_RECOMMENDATION="様子見"
-        AI_WAIT_FOR="[]"
     else
         # Extract from new educational format
         AI_DECISION=$(echo "$AI_RESULT" | jq -r '.decision.action // "not_order"')
         AI_DIRECTION=$(echo "$AI_RESULT" | jq -r '.decision.direction // ""')
         AI_CONFIDENCE=$(echo "$AI_RESULT" | jq -r '.decision.confidence // 0')
         AI_SUMMARY=$(echo "$AI_RESULT" | jq -r '.decision.summary // ""')
-        AI_RISK=$(echo "$AI_RESULT" | jq -r '.analysis.risk_assessment.level // "unknown"')
-        AI_LEARNING_TOPIC=$(echo "$AI_RESULT" | jq -r '.learning.today_topic // ""')
-        AI_LEARNING_EXAMPLE=$(echo "$AI_RESULT" | jq -r '.learning.today_example // ""')
-        AI_RECOMMENDATION=$(echo "$AI_RESULT" | jq -r '.action_guide.recommendation // "様子見"')
-        AI_WAIT_FOR=$(echo "$AI_RESULT" | jq -c '.action_guide.wait_for // []')
+        AI_RISK=$(echo "$AI_RESULT" | jq -r '.analysis.risk.level // "unknown"')
     fi
 
     echo "  AI Decision: $AI_DECISION (confidence: $AI_CONFIDENCE%)" >&2
     echo "  Summary: $AI_SUMMARY" >&2
     echo "  Risk: $AI_RISK" >&2
-    echo "  Recommendation: $AI_RECOMMENDATION" >&2
 fi
 
 # Step 6: Final Decision
@@ -437,10 +424,6 @@ FINAL_RESULT=$(jq -n \
     --argjson ai_confidence "$AI_CONFIDENCE" \
     --arg ai_summary "$AI_SUMMARY" \
     --arg ai_risk "$AI_RISK" \
-    --arg ai_recommendation "$AI_RECOMMENDATION" \
-    --arg ai_learning_topic "$AI_LEARNING_TOPIC" \
-    --arg ai_learning_example "$AI_LEARNING_EXAMPLE" \
-    --argjson ai_wait_for "$AI_WAIT_FOR" \
     --argjson bid "$BID" \
     --argjson ask "$ASK" \
     --arg sl_price "$SL_PRICE" \
@@ -469,14 +452,8 @@ FINAL_RESULT=$(jq -n \
             decision: $ai_decision,
             confidence: $ai_confidence,
             summary: $ai_summary,
-            risk: $ai_risk,
-            recommendation: $ai_recommendation
+            risk: $ai_risk
         },
-        learning: {
-            topic: $ai_learning_topic,
-            example: $ai_learning_example
-        },
-        next_actions: $ai_wait_for,
         price: {
             bid: $bid,
             ask: $ask
