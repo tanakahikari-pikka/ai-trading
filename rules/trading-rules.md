@@ -80,20 +80,20 @@ AI分析はコストがかかるため、明らかにトレードチャンスが
 
 | # | 条件 | 判定値 | 理由 |
 |---|------|--------|------|
-| 1 | シグナルなし | `RULE_SIGNAL == "Wait"` | Buy/Sell どちらも2/4条件未満で方向性がない |
+| 1 | シグナルなし | `BUY_CONDITIONS < 2 AND SELL_CONDITIONS < 2` | Buy/Sell どちらも2/4条件未満で方向性がない |
 | 2 | 低ボラティリティ | `VOLATILITY == "low"` | 値動きが小さく利益が出にくい |
 
 ### 判定ロジック
 
 ```
-if RULE_SIGNAL == "Wait":
+if BUY_CONDITIONS < 2 AND SELL_CONDITIONS < 2:
     → AI分析スキップ（理由: 方向性なし）
 
 elif VOLATILITY == "low":
     → AI分析スキップ（理由: 値動き不足）
 
 else:
-    → AI分析実行
+    → AI分析実行（どちらかが2/4以上）
 ```
 
 ### スキップ時の動作

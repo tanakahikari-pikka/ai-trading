@@ -19,7 +19,8 @@ check_prefilter() {
     local skip="false"
     local reason=""
 
-    if [[ "$rule_signal" == "Wait" ]]; then
+    # Skip only if BOTH buy and sell conditions are below threshold
+    if [[ "$buy_conditions" -lt 2 && "$sell_conditions" -lt 2 ]]; then
         skip="true"
         reason="No clear signal (Buy: ${buy_conditions}/4, Sell: ${sell_conditions}/4)"
     elif [[ "$volatility" == "low" ]]; then
