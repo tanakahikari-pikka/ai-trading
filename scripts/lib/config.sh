@@ -51,9 +51,12 @@ load_currency_config() {
     TP_MODE=$(jq -r '.sl_tp.take_profit.mode // "ratio"' "$config_file")
     TP_VALUE=$(jq -r '.sl_tp.take_profit.value // 2.0' "$config_file")
 
+    # Trading limits
+    MAX_AMOUNT=$(jq -r '.max_amount // 10000' "$config_file")
+
     # Export for subshells
     export SYMBOL YAHOO_SYMBOL SAXO_UIC SAXO_ASSET_TYPE DISPLAY_NAME DESCRIPTION
-    export PIP_SIZE DECIMAL_PLACES DEFAULT_PERCENTAGE
+    export PIP_SIZE DECIMAL_PLACES DEFAULT_PERCENTAGE MAX_AMOUNT
     export RSI_OVERBOUGHT RSI_OVERSOLD RSI_BUY_THRESHOLD RSI_SELL_THRESHOLD MIN_CONDITIONS FRESH_CROSS_LOOKBACK
     export PRIMARY_TIMEFRAME PRIMARY_RANGE SECONDARY_TIMEFRAME SECONDARY_RANGE
     export SL_TP_ENABLED SL_MODE SL_MULTIPLIER TP_MODE TP_VALUE
