@@ -15,6 +15,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/analysis.sh"
 source "$SCRIPT_DIR/lib/trading.sh"
+source "$SCRIPT_DIR/lib/prefilter.sh"
 
 # Parse arguments
 CURRENCY=""
@@ -181,47 +182,70 @@ TRADE_AMOUNT=$(echo "$TRADE_AMOUNT_EUR" | awk '{printf "%.0f", $1}')
 echo "  Cash Balance: $CASH_BALANCE EUR" >&2
 echo "  Trade Amount ($DEFAULT_PERCENTAGE%): $TRADE_AMOUNT" >&2
 
-# Step 5: AI Analysis with comprehensive data
-echo "" >&2
-echo "[Step 5] Running AI analysis (Educational Mode)..." >&2
+# Step 4.5: Pre-filter - Skip AI if no clear opportunity
+PREFILTER_RESULT=$(check_prefilter "$RULE_SIGNAL" "$VOLATILITY" "$BUY_CONDITIONS" "$SELL_CONDITIONS")
+SKIP_AI=$(echo "$PREFILTER_RESULT" | jq -r '.skip')
+SKIP_REASON=$(echo "$PREFILTER_RESULT" | jq -r '.reason')
 
-# Get recent prices for context
-RECENT_CLOSES_1H=$(echo "$CHART_DATA_1H" | jq '.close[-24:]')
-RECENT_CLOSES_4H=$(echo "$CHART_DATA_4H" | jq '.close[-12:]')
+if [[ "$SKIP_AI" == "true" ]]; then
+    echo "" >&2
+    echo "[Step 5] AI analysis SKIPPED" >&2
+    echo "  Reason: $SKIP_REASON" >&2
 
-# Build comprehensive market data for AI
-MARKET_DATA=$(build_market_data "$SYMBOL" "$BID" "$ASK" "$ANALYSIS_1H" "$ANALYSIS_4H" "$RECENT_CLOSES_1H" "$RECENT_CLOSES_4H" "$RULE_SIGNAL" "$TREND_1H" "$TREND_4H")
-
-AI_RESULT=$(echo "$MARKET_DATA" | run_ai_analysis)
-
-if [[ -z "$AI_RESULT" ]]; then
-    echo "Warning: AI analysis failed, using rule-based only" >&2
+    # Set default values for skipped AI analysis
+    AI_RESULT="null"
     AI_DECISION="not_order"
     AI_DIRECTION=""
     AI_CONFIDENCE=0
-    AI_SUMMARY="AI analysis unavailable"
-    AI_RISK="unknown"
+    AI_SUMMARY="$SKIP_REASON"
+    AI_RISK="N/A"
     AI_LEARNING_TOPIC=""
     AI_LEARNING_EXAMPLE=""
     AI_RECOMMENDATION="様子見"
     AI_WAIT_FOR="[]"
 else
-    # Extract from new educational format
-    AI_DECISION=$(echo "$AI_RESULT" | jq -r '.decision.action // "not_order"')
-    AI_DIRECTION=$(echo "$AI_RESULT" | jq -r '.decision.direction // ""')
-    AI_CONFIDENCE=$(echo "$AI_RESULT" | jq -r '.decision.confidence // 0')
-    AI_SUMMARY=$(echo "$AI_RESULT" | jq -r '.decision.summary // ""')
-    AI_RISK=$(echo "$AI_RESULT" | jq -r '.analysis.risk_assessment.level // "unknown"')
-    AI_LEARNING_TOPIC=$(echo "$AI_RESULT" | jq -r '.learning.today_topic // ""')
-    AI_LEARNING_EXAMPLE=$(echo "$AI_RESULT" | jq -r '.learning.today_example // ""')
-    AI_RECOMMENDATION=$(echo "$AI_RESULT" | jq -r '.action_guide.recommendation // "様子見"')
-    AI_WAIT_FOR=$(echo "$AI_RESULT" | jq -c '.action_guide.wait_for // []')
-fi
+    # Step 5: AI Analysis with comprehensive data
+    echo "" >&2
+    echo "[Step 5] Running AI analysis (Educational Mode)..." >&2
 
-echo "  AI Decision: $AI_DECISION (confidence: $AI_CONFIDENCE%)" >&2
-echo "  Summary: $AI_SUMMARY" >&2
-echo "  Risk: $AI_RISK" >&2
-echo "  Recommendation: $AI_RECOMMENDATION" >&2
+    # Get recent prices for context
+    RECENT_CLOSES_1H=$(echo "$CHART_DATA_1H" | jq '.close[-24:]')
+    RECENT_CLOSES_4H=$(echo "$CHART_DATA_4H" | jq '.close[-12:]')
+
+    # Build comprehensive market data for AI
+    MARKET_DATA=$(build_market_data "$SYMBOL" "$BID" "$ASK" "$ANALYSIS_1H" "$ANALYSIS_4H" "$RECENT_CLOSES_1H" "$RECENT_CLOSES_4H" "$RULE_SIGNAL" "$TREND_1H" "$TREND_4H")
+
+    AI_RESULT=$(echo "$MARKET_DATA" | run_ai_analysis)
+
+    if [[ -z "$AI_RESULT" ]]; then
+        echo "Warning: AI analysis failed, using rule-based only" >&2
+        AI_DECISION="not_order"
+        AI_DIRECTION=""
+        AI_CONFIDENCE=0
+        AI_SUMMARY="AI analysis unavailable"
+        AI_RISK="unknown"
+        AI_LEARNING_TOPIC=""
+        AI_LEARNING_EXAMPLE=""
+        AI_RECOMMENDATION="様子見"
+        AI_WAIT_FOR="[]"
+    else
+        # Extract from new educational format
+        AI_DECISION=$(echo "$AI_RESULT" | jq -r '.decision.action // "not_order"')
+        AI_DIRECTION=$(echo "$AI_RESULT" | jq -r '.decision.direction // ""')
+        AI_CONFIDENCE=$(echo "$AI_RESULT" | jq -r '.decision.confidence // 0')
+        AI_SUMMARY=$(echo "$AI_RESULT" | jq -r '.decision.summary // ""')
+        AI_RISK=$(echo "$AI_RESULT" | jq -r '.analysis.risk_assessment.level // "unknown"')
+        AI_LEARNING_TOPIC=$(echo "$AI_RESULT" | jq -r '.learning.today_topic // ""')
+        AI_LEARNING_EXAMPLE=$(echo "$AI_RESULT" | jq -r '.learning.today_example // ""')
+        AI_RECOMMENDATION=$(echo "$AI_RESULT" | jq -r '.action_guide.recommendation // "様子見"')
+        AI_WAIT_FOR=$(echo "$AI_RESULT" | jq -c '.action_guide.wait_for // []')
+    fi
+
+    echo "  AI Decision: $AI_DECISION (confidence: $AI_CONFIDENCE%)" >&2
+    echo "  Summary: $AI_SUMMARY" >&2
+    echo "  Risk: $AI_RISK" >&2
+    echo "  Recommendation: $AI_RECOMMENDATION" >&2
+fi
 
 # Step 6: Final Decision
 echo "" >&2
