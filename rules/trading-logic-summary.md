@@ -47,7 +47,7 @@ else:
 
 | # | 条件 | 閾値 |
 |---|------|------|
-| 1 | RSI が売られ気味 | RSI < 40 |
+| 1 | RSI が売られ気味 | RSI < RSI_BUY_THRESHOLD（動的） |
 | 2 | 価格がSMA20付近（押し目検出） | SMA20 × 0.99 < 価格 < SMA20 × 1.01 |
 | 3 | 勢いあり | MACD > シグナルライン |
 | 4 | BB下限付近 | 価格 < BB下限 + バンド幅×30% |
@@ -56,10 +56,17 @@ else:
 
 | # | 条件 | 閾値 |
 |---|------|------|
-| 1 | RSI が買われ気味 | RSI > 60 |
+| 1 | RSI が買われ気味 | RSI > RSI_SELL_THRESHOLD（動的） |
 | 2 | 価格がSMA20付近（戻り検出） | SMA20 × 0.99 < 価格 < SMA20 × 1.01 |
 | 3 | 勢い弱い | MACD < シグナルライン |
 | 4 | BB上限付近 | 価格 > BB上限 - バンド幅×30% |
+
+### RSI動的閾値
+
+| 条件 | Buy閾値 | Sell閾値 |
+|------|---------|----------|
+| atr_ratio > 1.5（高ボラ） | 30 | 70 |
+| atr_ratio <= 1.5（通常） | 40 | 60 |
 
 ### MTFフィルター（マルチタイムフレーム確認）
 
@@ -70,19 +77,33 @@ else:
 | Buy | SMA(20) > SMA(50)（上昇トレンド） |
 | Sell | SMA(20) < SMA(50)（下降トレンド） |
 
+### ATRフィルター（レンジ相場抑制）
+
+低ボラティリティ環境ではシグナルを抑制：
+
+| 条件 | 動作 |
+|------|------|
+| atr_ratio < 0.7 | Signal = "Wait" に強制変更 |
+
 ### シグナル判定
 
 ```
-if BUY_COUNT >= 2 AND BUY_COUNT > SELL_COUNT:
+# ATRフィルター（レンジ相場抑制）
+if atr_ratio < 0.7:
+    SIGNAL = "Wait"  # 低ボラ = レンジ相場の可能性
+
+elif BUY_COUNT >= 2 AND BUY_COUNT > SELL_COUNT:
     if SMA(20) > SMA(50):  # MTFフィルター
         SIGNAL = "Buy"
     else:
         SIGNAL = "Wait"  # 上位トレンドに逆行
+
 elif SELL_COUNT >= 2 AND SELL_COUNT > BUY_COUNT:
     if SMA(20) < SMA(50):  # MTFフィルター
         SIGNAL = "Sell"
     else:
         SIGNAL = "Wait"  # 上位トレンドに逆行
+
 else:
     SIGNAL = "Wait"
 ```
