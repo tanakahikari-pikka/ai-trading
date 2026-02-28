@@ -61,7 +61,7 @@ SMA50_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/sma.sh" 50 2>/dev/null || echo '{"s
 EMA12_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/ema.sh" 12 2>/dev/null || echo '{"ema":0}')
 EMA26_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/ema.sh" 26 2>/dev/null || echo '{"ema":0}')
 MACD_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/macd.sh" 12 26 9 2>/dev/null || echo '{"macd":0,"signal":0,"histogram":0}')
-BB_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/bollinger.sh" 20 2 2>/dev/null || echo '{"upper":0,"middle":0,"lower":0,"position":"unknown"}')
+BB_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/bollinger.sh" 20 2 2>/dev/null || echo '{"upper":0,"middle":0,"lower":0,"position":"unknown","percent_b":50}')
 ATR_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/atr.sh" 14 2>/dev/null || echo '{"atr":0,"atr_percent":0,"volatility":"unknown"}')
 
 rm -f "$TEMP_FILE"
@@ -93,9 +93,10 @@ MACD=${MACD:-0}
 MACD_SIGNAL=${MACD_SIGNAL:-0}
 BB_MIDDLE=${BB_MIDDLE:-0}
 
-# Calculate BB band thresholds (30% into the band from lower/upper)
-BB_BUY_THRESHOLD=$(echo "$BB_LOWER + ($BB_MIDDLE - $BB_LOWER) * 0.3" | bc -l 2>/dev/null || echo 0)
-BB_SELL_THRESHOLD=$(echo "$BB_UPPER - ($BB_UPPER - $BB_MIDDLE) * 0.3" | bc -l 2>/dev/null || echo 0)
+# Extract %B from Bollinger Bands (already calculated in bollinger.sh)
+# %B = (price - lower) / (upper - lower) * 100
+# 0 = at lower band, 50 = at middle, 100 = at upper band
+PERCENT_B=$(echo "$BB_DATA" | jq -r '.percent_b // 50')
 
 # Calculate SMA20 proximity bands (ATR-based, directional)
 # Buy: SMA20 - ATR < price <= SMA20 (pullback from below)
@@ -126,14 +127,16 @@ fi
 BUY_RSI=$(echo "$RSI < $RSI_BUY_THRESHOLD" | bc -l 2>/dev/null || echo 0)
 # BUY_NEAR_SMA20 already calculated above (SMA20 - ATR < price <= SMA20)
 BUY_MACD=$(echo "$MACD > $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
-BUY_BB=$(echo "$CURRENT_PRICE < $BB_BUY_THRESHOLD" | bc -l 2>/dev/null || echo 0)
+# %B < 30 means price is in the lower 30% of the band (normalized, volatility-independent)
+BUY_BB=$(echo "$PERCENT_B < 30" | bc -l 2>/dev/null || echo 0)
 BUY_COUNT=$((BUY_RSI + BUY_NEAR_SMA20 + BUY_MACD + BUY_BB))
 
 # Sell conditions
 SELL_RSI=$(echo "$RSI > $RSI_SELL_THRESHOLD" | bc -l 2>/dev/null || echo 0)
 # SELL_NEAR_SMA20 already calculated above (SMA20 < price < SMA20 + ATR)
 SELL_MACD=$(echo "$MACD < $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
-SELL_BB=$(echo "$CURRENT_PRICE > $BB_SELL_THRESHOLD" | bc -l 2>/dev/null || echo 0)
+# %B > 70 means price is in the upper 30% of the band (normalized, volatility-independent)
+SELL_BB=$(echo "$PERCENT_B > 70" | bc -l 2>/dev/null || echo 0)
 SELL_COUNT=$((SELL_RSI + SELL_NEAR_SMA20 + SELL_MACD + SELL_BB))
 
 # Check ATR filter (range market suppression)
@@ -176,6 +179,7 @@ echo "--- Rule Analysis ---" >&2
 echo "RSI Thresholds: buy<$RSI_BUY_THRESHOLD sell>$RSI_SELL_THRESHOLD (high_vol=$HIGH_VOLATILITY)" >&2
 echo "Buy conditions: $BUY_COUNT/4 (RSI:$BUY_RSI NEAR_SMA20:$BUY_NEAR_SMA20 MACD:$BUY_MACD BB:$BUY_BB)" >&2
 echo "Sell conditions: $SELL_COUNT/4 (RSI:$SELL_RSI NEAR_SMA20:$SELL_NEAR_SMA20 MACD:$SELL_MACD BB:$SELL_BB)" >&2
+echo "Bollinger %B: $PERCENT_B (buy<30, sell>70)" >&2
 echo "SMA20 Proximity: buy=$BUY_NEAR_SMA20 (SMA20-ATR=$SMA20_BUY_LOWER to SMA20=$SMA20) sell=$SELL_NEAR_SMA20 (SMA20=$SMA20 to SMA20+ATR=$SMA20_SELL_UPPER)" >&2
 echo "SMA20 Slope: up=$SMA20_SLOPE_UP down=$SMA20_SLOPE_DOWN (AI参考用)" >&2
 echo "ATR Filter: atr_ratio=$ATR_RATIO (low_vol=$LOW_VOLATILITY, threshold=0.7)" >&2
@@ -197,6 +201,7 @@ OUTPUT=$(jq -n \
     --argjson bb_middle "${BB_MIDDLE:-0}" \
     --argjson bb_lower "${BB_LOWER:-0}" \
     --arg bb_position "${BB_POSITION:-unknown}" \
+    --argjson percent_b "${PERCENT_B:-50}" \
     --argjson atr "${ATR:-0}" \
     --argjson atr_pct "${ATR_PCT:-0}" \
     --argjson atr_ema "${ATR_EMA:-null}" \
@@ -242,7 +247,8 @@ OUTPUT=$(jq -n \
                 upper: $bb_upper,
                 middle: $bb_middle,
                 lower: $bb_lower,
-                position: $bb_position
+                position: $bb_position,
+                percent_b: $percent_b
             },
             atr: {
                 value: $atr,
