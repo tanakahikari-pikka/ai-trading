@@ -30,9 +30,14 @@ if [[ "$PRICE_COUNT" -lt "$((PERIOD + 1))" ]]; then
     exit 1
 fi
 
-# Calculate ATR
-ATR_DATA=$(echo "$INPUT" | jq --arg period "$PERIOD" '
+# Calculate ATR with relative volatility (ATR / ATR_EMA)
+# EMA responds faster to regime changes than SMA
+ATR_EMA_PERIOD=50
+
+ATR_DATA=$(echo "$INPUT" | jq --arg period "$PERIOD" --arg ema_period "$ATR_EMA_PERIOD" '
     ($period | tonumber) as $p |
+    ($ema_period | tonumber) as $ep |
+    (2 / ($ep + 1)) as $ema_multiplier |
     .high as $h |
     .low as $l |
     .close as $c |
@@ -50,15 +55,50 @@ ATR_DATA=$(echo "$INPUT" | jq --arg period "$PERIOD" '
             (($h[$i] - $c[$i - 1]) | fabs),       # |High - Previous Close|
             (($l[$i] - $c[$i - 1]) | fabs)        # |Low - Previous Close|
         ] | max
-    ) |
+    ) as $true_ranges |
 
-    # Calculate ATR (average of last N true ranges)
-    .[-$p:] | add / $p |
+    # Calculate rolling ATR values
+    if ($true_ranges | length) >= ($p + $ep) then
+        # Calculate ATR values for each period (rolling window)
+        [range($ep + 1)] | map(
+            . as $offset |
+            $true_ranges[-($p + $ep - $offset):][:$p] | add / $p
+        ) as $atr_series |
 
-    {
-        atr: .,
-        period: $p
-    }
+        # Calculate EMA of ATR series
+        # Start with SMA of first $ep values as initial EMA
+        ($atr_series[:$ep] | add / $ep) as $initial_ema |
+
+        # Apply EMA formula: EMA = (current - prev_ema) * multiplier + prev_ema
+        (reduce $atr_series[$ep:][] as $atr (
+            $initial_ema;
+            ($atr - .) * $ema_multiplier + .
+        )) as $atr_ema |
+
+        # Current ATR (most recent)
+        ($atr_series | last) as $current_atr |
+
+        # Relative ATR ratio (continuous volatility score)
+        (if $atr_ema > 0 then $current_atr / $atr_ema else 1 end) as $atr_ratio |
+
+        {
+            atr: $current_atr,
+            atr_ema: $atr_ema,
+            atr_ratio: ($atr_ratio * 100 | round / 100),
+            period: $p,
+            ema_period: $ep
+        }
+    else
+        # Fallback: not enough data for EMA, use simple ATR
+        ($true_ranges[-$p:] | add / $p) as $current_atr |
+        {
+            atr: $current_atr,
+            atr_ema: null,
+            atr_ratio: 1,
+            period: $p,
+            ema_period: $ep
+        }
+    end
 ')
 
 ATR_VALUE=$(echo "$ATR_DATA" | jq -r '.atr | . * 10000 | round / 10000')
@@ -70,14 +110,22 @@ ATR_PCT=$(echo "$ATR_DATA" | jq -r --arg price "$CURRENT_PRICE" '
     .atr / $p * 100 | . * 100 | round / 100
 ')
 
+# Get ATR ratio for volatility classification
+ATR_RATIO=$(echo "$ATR_DATA" | jq -r '.atr_ratio // 1')
+ATR_EMA=$(echo "$ATR_DATA" | jq -r '.atr_ema // "null"')
+
 ATR_DATA=$(echo "$ATR_DATA" | jq --arg pct "$ATR_PCT" --arg price "$CURRENT_PRICE" '
     . + {
         atr_percent: ($pct | tonumber),
         current_price: ($price | tonumber),
+        # Backward compatible volatility label based on atr_ratio
+        # ratio > 1.5 = high (50% above average)
+        # ratio < 0.7 = low (30% below average)
+        # else = medium
         volatility: (
-            if ($pct | tonumber) > 1 then "high"
-            elif ($pct | tonumber) > 0.5 then "medium"
-            else "low"
+            if .atr_ratio > 1.5 then "high"
+            elif .atr_ratio < 0.7 then "low"
+            else "medium"
             end
         )
     }
@@ -86,6 +134,8 @@ ATR_DATA=$(echo "$ATR_DATA" | jq --arg pct "$ATR_PCT" --arg price "$CURRENT_PRIC
 echo "=== ATR($PERIOD) ===" >&2
 echo "ATR: $ATR_VALUE" >&2
 echo "ATR%: $ATR_PCT%" >&2
+echo "ATR_EMA(50): $ATR_EMA" >&2
+echo "ATR Ratio: $ATR_RATIO (relative volatility score)" >&2
 
 echo ""
 echo "$ATR_DATA"
