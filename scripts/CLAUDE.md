@@ -4,6 +4,22 @@
 
 複数通貨ペア対応の自動トレードシステム。テクニカル指標（RSI, MACD, ボリンジャーバンド, ATR）+ AI分析で判断し、Saxo Bank API で発注。教育的フィードバック機能付き。
 
+## 開発ルール
+
+### 取引ロジック変更時の手順
+
+**重要**: 取引ロジック（エントリー条件、フィルター、SL/TP等）を変更する際は、必ず以下の順序で行うこと。
+
+1. **先に `rules/` ドキュメントを更新**
+   - `rules/trading-rules.md` - 運用ルール詳細
+   - `rules/trading-logic-summary.md` - ロジックまとめ
+2. **その後にコードを実装**
+   - `scripts/indicators/analyze.sh` - テクニカル分析
+   - `scripts/lib/prefilter.sh` - プレフィルター
+   - `scripts/auto-trade.sh` - メインロジック
+
+ドキュメント先行で設計を明確にしてから実装する。
+
 ## 対応通貨ペア
 
 | シンボル | 名称 | 説明 |
