@@ -8,6 +8,7 @@
   "pip_size": 0.01,
   "decimal_places": 2,
   "default_percentage": 5,
+  "max_amount": 50,
   "thresholds": {
     "rsi_overbought": 70,
     "rsi_oversold": 30,

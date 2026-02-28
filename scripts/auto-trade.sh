@@ -206,11 +206,17 @@ BALANCE_DATA=$(get_balance "$DEFAULT_PERCENTAGE")
 TRADE_AMOUNT_EUR=$(echo "$BALANCE_DATA" | jq -r '.tradeAmount')
 CASH_BALANCE=$(echo "$BALANCE_DATA" | jq -r '.cashBalance')
 
-# Convert to trade amount
-TRADE_AMOUNT=$(echo "$TRADE_AMOUNT_EUR" | awk '{printf "%.0f", $1}')
-
-echo "  Cash Balance: $CASH_BALANCE EUR" >&2
-echo "  Trade Amount ($DEFAULT_PERCENTAGE%): $TRADE_AMOUNT" >&2
+# Convert to trade amount and apply max limit
+TRADE_AMOUNT_RAW=$(echo "$TRADE_AMOUNT_EUR" | awk '{printf "%.0f", $1}')
+if [[ "$TRADE_AMOUNT_RAW" -gt "$MAX_AMOUNT" ]]; then
+    TRADE_AMOUNT="$MAX_AMOUNT"
+    echo "  Cash Balance: $CASH_BALANCE EUR" >&2
+    echo "  Trade Amount ($DEFAULT_PERCENTAGE%): $TRADE_AMOUNT_RAW -> capped to $MAX_AMOUNT (max_amount limit)" >&2
+else
+    TRADE_AMOUNT="$TRADE_AMOUNT_RAW"
+    echo "  Cash Balance: $CASH_BALANCE EUR" >&2
+    echo "  Trade Amount ($DEFAULT_PERCENTAGE%): $TRADE_AMOUNT" >&2
+fi
 
 # Step 4.5: Pre-filter - Skip AI if no clear opportunity
 PREFILTER_RESULT=$(check_prefilter "$RULE_SIGNAL" "$VOLATILITY" "$BUY_CONDITIONS" "$SELL_CONDITIONS")
