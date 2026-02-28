@@ -63,27 +63,47 @@ MACD=${MACD:-0}
 MACD_SIGNAL=${MACD_SIGNAL:-0}
 BB_MIDDLE=${BB_MIDDLE:-0}
 
+# Calculate BB band thresholds (30% into the band from lower/upper)
+BB_BUY_THRESHOLD=$(echo "$BB_LOWER + ($BB_MIDDLE - $BB_LOWER) * 0.3" | bc -l 2>/dev/null || echo 0)
+BB_SELL_THRESHOLD=$(echo "$BB_UPPER - ($BB_UPPER - $BB_MIDDLE) * 0.3" | bc -l 2>/dev/null || echo 0)
+
+# Determine SMA trend alignment (MTF filter)
+SMA_TREND_UP=$(echo "$SMA20 > $SMA50" | bc -l 2>/dev/null || echo 0)
+SMA_TREND_DOWN=$(echo "$SMA20 < $SMA50" | bc -l 2>/dev/null || echo 0)
+
 # Rule-based analysis (2/4 conditions for signal)
 # Buy conditions
 BUY_RSI=$(echo "$RSI < 40" | bc -l 2>/dev/null || echo 0)
 BUY_SMA=$(echo "$CURRENT_PRICE > $SMA20" | bc -l 2>/dev/null || echo 0)
 BUY_MACD=$(echo "$MACD > $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
-BUY_BB=$(echo "$CURRENT_PRICE < $BB_MIDDLE" | bc -l 2>/dev/null || echo 0)
+BUY_BB=$(echo "$CURRENT_PRICE < $BB_BUY_THRESHOLD" | bc -l 2>/dev/null || echo 0)
 BUY_COUNT=$((BUY_RSI + BUY_SMA + BUY_MACD + BUY_BB))
 
 # Sell conditions
 SELL_RSI=$(echo "$RSI > 60" | bc -l 2>/dev/null || echo 0)
 SELL_SMA=$(echo "$CURRENT_PRICE < $SMA20" | bc -l 2>/dev/null || echo 0)
 SELL_MACD=$(echo "$MACD < $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
-SELL_BB=$(echo "$CURRENT_PRICE > $BB_MIDDLE" | bc -l 2>/dev/null || echo 0)
+SELL_BB=$(echo "$CURRENT_PRICE > $BB_SELL_THRESHOLD" | bc -l 2>/dev/null || echo 0)
 SELL_COUNT=$((SELL_RSI + SELL_SMA + SELL_MACD + SELL_BB))
 
-# Determine signal (2/4 threshold)
+# Determine signal (2/4 threshold + MTF alignment)
 SIGNAL="Wait"
 if [[ $BUY_COUNT -ge 2 && $BUY_COUNT -gt $SELL_COUNT ]]; then
-    SIGNAL="Buy"
+    # Buy only allowed when SMA20 > SMA50 (uptrend)
+    if [[ $SMA_TREND_UP -eq 1 ]]; then
+        SIGNAL="Buy"
+    else
+        SIGNAL="Wait"
+        echo "  [MTF Filter] Buy blocked: SMA20 < SMA50 (downtrend)" >&2
+    fi
 elif [[ $SELL_COUNT -ge 2 && $SELL_COUNT -gt $BUY_COUNT ]]; then
-    SIGNAL="Sell"
+    # Sell only allowed when SMA20 < SMA50 (downtrend)
+    if [[ $SMA_TREND_DOWN -eq 1 ]]; then
+        SIGNAL="Sell"
+    else
+        SIGNAL="Wait"
+        echo "  [MTF Filter] Sell blocked: SMA20 > SMA50 (uptrend)" >&2
+    fi
 fi
 
 # Determine trend
@@ -97,6 +117,7 @@ fi
 echo "--- Rule Analysis ---" >&2
 echo "Buy conditions: $BUY_COUNT/4 (RSI:$BUY_RSI SMA:$BUY_SMA MACD:$BUY_MACD BB:$BUY_BB)" >&2
 echo "Sell conditions: $SELL_COUNT/4 (RSI:$SELL_RSI SMA:$SELL_SMA MACD:$SELL_MACD BB:$SELL_BB)" >&2
+echo "MTF Filter: SMA20 vs SMA50 = $(if [[ $SMA_TREND_UP -eq 1 ]]; then echo 'Uptrend'; elif [[ $SMA_TREND_DOWN -eq 1 ]]; then echo 'Downtrend'; else echo 'Flat'; fi)" >&2
 echo "Signal: $SIGNAL" >&2
 echo "Trend: $TREND" >&2
 
@@ -130,6 +151,8 @@ OUTPUT=$(jq -n \
     --argjson sell_sma "${SELL_SMA:-0}" \
     --argjson sell_macd "${SELL_MACD:-0}" \
     --argjson sell_bb "${SELL_BB:-0}" \
+    --argjson sma_trend_up "${SMA_TREND_UP:-0}" \
+    --argjson sma_trend_down "${SMA_TREND_DOWN:-0}" \
     '{
         current_price: $current_price,
         indicators: {
@@ -173,6 +196,11 @@ OUTPUT=$(jq -n \
                     macd_bearish: ($sell_macd == 1),
                     near_bb_upper: ($sell_bb == 1)
                 }
+            },
+            mtf_filter: {
+                sma20_above_sma50: ($sma_trend_up == 1),
+                sma20_below_sma50: ($sma_trend_down == 1),
+                trend_direction: (if $sma_trend_up == 1 then "uptrend" elif $sma_trend_down == 1 then "downtrend" else "flat" end)
             }
         }
     }')
