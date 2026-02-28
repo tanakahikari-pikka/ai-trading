@@ -100,6 +100,10 @@ BB_MIDDLE=${BB_MIDDLE:-0}
 # 0 = at lower band, 50 = at middle, 100 = at upper band
 PERCENT_B=$(echo "$BB_DATA" | jq -r '.percent_b // 50')
 
+# Extract band width percentage for squeeze detection
+# band_width_pct = (upper - lower) / middle * 100
+BAND_WIDTH_PCT=$(echo "$BB_DATA" | jq -r '.band_width_pct // 4')
+
 # Calculate SMA20 proximity bands (ATR-based, directional)
 # Buy: SMA20 - ATR < price <= SMA20 (pullback from below)
 # Sell: SMA20 < price < SMA20 + ATR (retracement from above)
@@ -135,11 +139,13 @@ BUY_POSITION_COUNT=$((BUY_RSI + BUY_BB))
 # Prerequisite: MACD > Signal (crossed)
 BUY_MACD=$(echo "$MACD > $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
 
-# Fresh cross detection: zero cross (negative -> positive) within last 5 bars
-# Check if any of the first 4 bars are negative AND the last bar is positive
-BUY_FRESH_CROSS=$(echo "$HIST_HISTORY" | jq '
-    if length >= 5 then
-        ([.[0:4][] | select(. < 0)] | length > 0) and .[-1] > 0
+# Fresh cross detection: zero cross (negative -> positive) within lookback period
+# Check if any of the first (N-1) bars are negative AND the last bar is positive
+# FRESH_CROSS_LOOKBACK is configurable per currency (default: 5)
+LOOKBACK=${FRESH_CROSS_LOOKBACK:-5}
+BUY_FRESH_CROSS=$(echo "$HIST_HISTORY" | jq --argjson n "$LOOKBACK" '
+    if length >= $n then
+        ([.[0:($n-1)][] | select(. < 0)] | length > 0) and .[-1] > 0
         | if . then 1 else 0 end
     elif length >= 3 then
         # Fallback for shorter history: check if first bar negative, last positive
@@ -174,11 +180,11 @@ SELL_POSITION_COUNT=$((SELL_RSI + SELL_BB))
 # Prerequisite: MACD < Signal (crossed)
 SELL_MACD=$(echo "$MACD < $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
 
-# Fresh cross detection: zero cross (positive -> negative) within last 5 bars
-# Check if any of the first 4 bars are positive AND the last bar is negative
-SELL_FRESH_CROSS=$(echo "$HIST_HISTORY" | jq '
-    if length >= 5 then
-        ([.[0:4][] | select(. > 0)] | length > 0) and .[-1] < 0
+# Fresh cross detection: zero cross (positive -> negative) within lookback period
+# Check if any of the first (N-1) bars are positive AND the last bar is negative
+SELL_FRESH_CROSS=$(echo "$HIST_HISTORY" | jq --argjson n "$LOOKBACK" '
+    if length >= $n then
+        ([.[0:($n-1)][] | select(. > 0)] | length > 0) and .[-1] < 0
         | if . then 1 else 0 end
     elif length >= 3 then
         # Fallback for shorter history: check if first bar positive, last negative
@@ -207,6 +213,11 @@ SELL_COUNT=$((SELL_RSI + SELL_MACD + SELL_BB))
 LOW_VOLATILITY=$(echo "$ATR_RATIO < 0.7" | bc -l 2>/dev/null || echo 0)
 EXTREME_VOLATILITY=$(echo "$ATR_RATIO > 3.0" | bc -l 2>/dev/null || echo 0)
 
+# Check BB squeeze (low band width even when ATR ratio is normal)
+# BB squeeze threshold: band_width_pct < 2.0 AND atr_ratio 0.7-1.0 (borderline low volatility)
+BB_SQUEEZE_THRESHOLD=${BB_SQUEEZE_THRESHOLD:-2.0}
+BB_SQUEEZE=$(echo "$BAND_WIDTH_PCT < $BB_SQUEEZE_THRESHOLD && $ATR_RATIO >= 0.7 && $ATR_RATIO < 1.0" | bc -l 2>/dev/null || echo 0)
+
 # Determine signal (position ALL AND momentum)
 # Buy: RSI + BB both required (2/2) AND momentum (1/1)
 # Sell: RSI + BB both required (2/2) AND momentum (1/1)
@@ -220,6 +231,9 @@ if [[ $LOW_VOLATILITY -eq 1 ]]; then
 elif [[ $EXTREME_VOLATILITY -eq 1 ]]; then
     SIGNAL="Wait"
     echo "  [ATR Filter] Signal blocked: atr_ratio=$ATR_RATIO > 3.0 (extreme volatility / spread-slippage risk)" >&2
+elif [[ $BB_SQUEEZE -eq 1 ]]; then
+    SIGNAL="Wait"
+    echo "  [BB Squeeze] Signal blocked: band_width_pct=$BAND_WIDTH_PCT < $BB_SQUEEZE_THRESHOLD (BB squeeze / low directional clarity)" >&2
 elif [[ $BUY_POSITION_COUNT -eq 2 && $BUY_MOMENTUM_COUNT -eq 1 ]]; then
     # Buy fires only if ALL position conditions (RSI + BB) AND momentum are met
     # Check conflict: if Sell also fires, don't signal (rare edge case)
@@ -247,6 +261,7 @@ echo "Sell Position: $SELL_POSITION_COUNT/2 (RSI:$SELL_RSI BB:$SELL_BB) - ALL re
 echo "Sell Momentum: $SELL_MOMENTUM_COUNT/1 (MACD<Sig:$SELL_MACD FreshX:$SELL_FRESH_CROSS HistDec:$SELL_HIST_DECREASING)" >&2
 echo "Legacy counts: Buy=$BUY_COUNT/3 Sell=$SELL_COUNT/3" >&2
 echo "Bollinger %B: $PERCENT_B (buy<30, sell>70)" >&2
+echo "Bollinger Width: $BAND_WIDTH_PCT% (squeeze<$BB_SQUEEZE_THRESHOLD%, squeeze=$BB_SQUEEZE)" >&2
 echo "SMA20 Slope: up=$SMA20_SLOPE_UP down=$SMA20_SLOPE_DOWN (AI参考用)" >&2
 echo "ATR Filter: atr_ratio=$ATR_RATIO (low_vol=$LOW_VOLATILITY, extreme_vol=$EXTREME_VOLATILITY, range=0.7-3.0)" >&2
 echo "1h SMA Trend: SMA20 vs SMA50 = $(if [[ $SMA_TREND_UP -eq 1 ]]; then echo 'Uptrend'; elif [[ $SMA_TREND_DOWN -eq 1 ]]; then echo 'Downtrend'; else echo 'Flat'; fi) (参考用、MTFフィルターは4hで適用)" >&2
@@ -269,6 +284,8 @@ OUTPUT=$(jq -n \
     --argjson bb_lower "${BB_LOWER:-0}" \
     --arg bb_position "${BB_POSITION:-unknown}" \
     --argjson percent_b "${PERCENT_B:-50}" \
+    --argjson band_width_pct "${BAND_WIDTH_PCT:-4}" \
+    --argjson bb_squeeze "${BB_SQUEEZE:-0}" \
     --argjson atr "${ATR:-0}" \
     --argjson atr_pct "${ATR_PCT:-0}" \
     --argjson atr_ema "${ATR_EMA:-null}" \
@@ -321,7 +338,8 @@ OUTPUT=$(jq -n \
                 middle: $bb_middle,
                 lower: $bb_lower,
                 position: $bb_position,
-                percent_b: $percent_b
+                percent_b: $percent_b,
+                band_width_pct: $band_width_pct
             },
             atr: {
                 value: $atr,
@@ -391,6 +409,11 @@ OUTPUT=$(jq -n \
                 extreme_volatility: ($extreme_volatility == 1),
                 threshold_low: 0.7,
                 threshold_high: 3.0
+            },
+            bb_squeeze_filter: {
+                band_width_pct: $band_width_pct,
+                squeeze: ($bb_squeeze == 1),
+                threshold: 2.0
             },
             rsi_thresholds: {
                 buy_threshold: $rsi_buy_threshold,

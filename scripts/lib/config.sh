@@ -36,6 +36,7 @@ load_currency_config() {
     RSI_BUY_THRESHOLD=$(jq -r '.thresholds.rsi_buy_threshold' "$config_file")
     RSI_SELL_THRESHOLD=$(jq -r '.thresholds.rsi_sell_threshold' "$config_file")
     MIN_CONDITIONS=$(jq -r '.thresholds.min_conditions' "$config_file")
+    FRESH_CROSS_LOOKBACK=$(jq -r '.thresholds.fresh_cross_lookback // 5' "$config_file")
 
     # Timeframes
     PRIMARY_TIMEFRAME=$(jq -r '.timeframes.primary' "$config_file")
@@ -53,7 +54,7 @@ load_currency_config() {
     # Export for subshells
     export SYMBOL YAHOO_SYMBOL SAXO_UIC SAXO_ASSET_TYPE DISPLAY_NAME DESCRIPTION
     export PIP_SIZE DECIMAL_PLACES DEFAULT_PERCENTAGE
-    export RSI_OVERBOUGHT RSI_OVERSOLD RSI_BUY_THRESHOLD RSI_SELL_THRESHOLD MIN_CONDITIONS
+    export RSI_OVERBOUGHT RSI_OVERSOLD RSI_BUY_THRESHOLD RSI_SELL_THRESHOLD MIN_CONDITIONS FRESH_CROSS_LOOKBACK
     export PRIMARY_TIMEFRAME PRIMARY_RANGE SECONDARY_TIMEFRAME SECONDARY_RANGE
     export SL_TP_ENABLED SL_MODE SL_MULTIPLIER TP_MODE TP_VALUE
 
