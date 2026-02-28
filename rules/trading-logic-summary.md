@@ -8,7 +8,7 @@ AI分析はコストがかかるため、明らかにトレードチャンスが
 
 | # | 条件 | 判定値 | 理由 |
 |---|------|--------|------|
-| 1 | シグナルなし | `BUY_CONDITIONS < 2 AND SELL_CONDITIONS < 2` | Buy/Sell どちらも2/4条件未満で方向性がない |
+| 1 | シグナルなし | `BUY_CONDITIONS < 2 AND SELL_CONDITIONS < 2` | Buy/Sell どちらも2/3条件未満で方向性がない |
 | 2 | 低ボラティリティ | `VOLATILITY == "low"` | 値動きが小さく利益が出にくい |
 
 ### 判定ロジック
@@ -27,6 +27,8 @@ else:
 ### 実装
 
 `scripts/lib/prefilter.sh` の `check_prefilter()` 関数
+
+> **Note:** 低ボラ判定（`VOLATILITY == "low"` = `atr_ratio < 0.7`）はATRフィルターと重複するが、これは意図的な防御的設計。`analyze.sh`が単独で呼ばれるケースに対応するため、両方でガードしている。
 
 ---
 
@@ -111,9 +113,16 @@ if atr_ratio < 0.7:
 elif atr_ratio > 3.0:
     SIGNAL = "Wait"  # 極端高ボラ = スプレッド拡大・スリッページリスク
 
+# BBスクイーズフィルター（ボラティリティ収縮検出）
+elif band_width_pct < 2.0 AND 0.7 <= atr_ratio < 1.0:
+    SIGNAL = "Wait"  # スクイーズ状態 = 方向性不明確
+
 # 位置系ALL + 勢い系の複合条件
 elif BUY_RSI AND BUY_BB AND BUY_MOMENTUM:
-    SIGNAL = "Buy"  # 全条件到達（MTFフィルターは後段で適用）
+    if SELL_RSI AND SELL_BB AND SELL_MOMENTUM:
+        SIGNAL = "Wait"  # Buy/Sell同時成立 = コンフリクト回避
+    else:
+        SIGNAL = "Buy"  # 全条件到達（MTFフィルターは後段で適用）
 
 elif SELL_RSI AND SELL_BB AND SELL_MOMENTUM:
     SIGNAL = "Sell"  # 全条件到達（MTFフィルターは後段で適用）
@@ -213,12 +222,12 @@ else:
 
 | Buy条件 | Sell条件 | Volatility | RULE_SIGNAL | プレフィルター | AI分析 | 結果 |
 |---------|----------|------------|-------------|----------------|--------|------|
-| 1/4 | 1/4 | medium | Wait | スキップ | - | not_order |
-| 2/4 | 1/4 | low | Buy | スキップ | - | not_order |
-| 2/4 | 1/4 | medium | Buy | 通過 | go | **発注** |
-| 2/4 | 1/4 | medium | Buy | 通過 | not_order | not_order |
-| 2/4 | 2/4 | medium | Wait | 通過 | go | not_order* |
-| 3/4 | 1/4 | high | Buy | 通過 | go | **発注** |
+| 1/3 | 1/3 | medium | Wait | スキップ | - | not_order |
+| 2/3 | 1/3 | low | Buy | スキップ | - | not_order |
+| 2/3 | 1/3 | medium | Buy | 通過 | go | **発注** |
+| 2/3 | 1/3 | medium | Buy | 通過 | not_order | not_order |
+| 2/3 | 2/3 | medium | Wait | 通過 | go | not_order* |
+| 3/3 | 1/3 | high | Buy | 通過 | go | **発注** |
 
 *同点の場合、RULE_SIGNAL が Wait なので発注されない
 
