@@ -31,37 +31,58 @@ if [[ "$PRICE_COUNT" -lt "$MIN_REQUIRED" ]]; then
     exit 1
 fi
 
-# Calculate MACD
+# Calculate MACD with histogram history
 MACD_DATA=$(echo "$CLOSES" | jq --arg fast "$FAST" --arg slow "$SLOW" --arg signal "$SIGNAL" '
     ($fast | tonumber) as $f |
     ($slow | tonumber) as $s |
     ($signal | tonumber) as $sig |
 
     # Filter out null values
-    [.[] | select(. != null)] |
+    [.[] | select(. != null)] as $prices |
 
-    # EMA calculation
-    def ema($period):
+    # EMA series calculation (returns array of EMA values)
+    def ema_series($period):
         (2 / ($period + 1)) as $k |
         (.[0:$period] | add / $period) as $initial |
-        reduce .[$period:][] as $price ($initial; ($price * $k) + (. * (1 - $k)));
+        [$initial] + [
+            foreach .[$period:][] as $price ($initial; ($price * $k) + (. * (1 - $k)))
+        ];
 
-    # Calculate EMAs
-    ema($f) as $ema_fast |
-    ema($s) as $ema_slow |
+    # Calculate EMA series for fast and slow
+    ($prices | ema_series($f)) as $ema_fast_series |
+    ($prices | ema_series($s)) as $ema_slow_series |
 
-    # MACD line
-    ($ema_fast - $ema_slow) as $macd |
+    # MACD line series (aligned from slow EMA start)
+    # Fast EMA needs offset to align with slow EMA
+    ($s - $f) as $offset |
+    [range($ema_slow_series | length)] | map(
+        $ema_fast_series[. + $offset] - $ema_slow_series[.]
+    ) as $macd_series |
 
-    # Signal line (simplified: 90% of MACD as approximation)
-    ($macd * 0.9) as $signal_line |
+    # Signal line series (EMA of MACD)
+    ($macd_series | ema_series($sig)) as $signal_series |
+
+    # Histogram series
+    ($sig - 1) as $sig_offset |
+    [range($signal_series | length)] | map(
+        $macd_series[. + $sig_offset] - $signal_series[.]
+    ) as $histogram_series |
+
+    # Get last values
+    ($macd_series | last) as $macd |
+    ($signal_series | last) as $signal_line |
+    ($histogram_series | last) as $histogram |
+
+    # Get last 3 histogram values for momentum detection
+    ($histogram_series | .[-3:]) as $hist_last3 |
 
     {
         macd: ($macd | . * 10000 | round / 10000),
         signal: ($signal_line | . * 10000 | round / 10000),
-        histogram: (($macd - $signal_line) | . * 10000 | round / 10000),
-        ema_fast: ($ema_fast | . * 10000 | round / 10000),
-        ema_slow: ($ema_slow | . * 10000 | round / 10000),
+        histogram: ($histogram | . * 10000 | round / 10000),
+        histogram_history: ($hist_last3 | map(. * 10000 | round / 10000)),
+        ema_fast: ($ema_fast_series | last | . * 10000 | round / 10000),
+        ema_slow: ($ema_slow_series | last | . * 10000 | round / 10000),
         params: {
             fast: $f,
             slow: $s,
