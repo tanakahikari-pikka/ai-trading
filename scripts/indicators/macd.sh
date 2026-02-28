@@ -73,14 +73,14 @@ MACD_DATA=$(echo "$CLOSES" | jq --arg fast "$FAST" --arg slow "$SLOW" --arg sign
     ($signal_series | last) as $signal_line |
     ($histogram_series | last) as $histogram |
 
-    # Get last 3 histogram values for momentum detection
-    ($histogram_series | .[-3:]) as $hist_last3 |
+    # Get last 5 histogram values for momentum/fresh cross detection
+    ($histogram_series | .[-5:]) as $hist_last5 |
 
     {
         macd: ($macd | . * 10000 | round / 10000),
         signal: ($signal_line | . * 10000 | round / 10000),
         histogram: ($histogram | . * 10000 | round / 10000),
-        histogram_history: ($hist_last3 | map(. * 10000 | round / 10000)),
+        histogram_history: ($hist_last5 | map(. * 10000 | round / 10000)),
         ema_fast: ($ema_fast_series | last | . * 10000 | round / 10000),
         ema_slow: ($ema_slow_series | last | . * 10000 | round / 10000),
         params: {

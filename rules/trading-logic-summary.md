@@ -49,27 +49,23 @@ else:
 
 ### Buy条件
 
-**発火: (位置系 >= 2) AND (勢い系 >= 1)**
+**発火: 位置系ALL AND 勢い系**
 
-| カテゴリ | # | 条件 | 閾値 |
-|----------|---|------|------|
-| 位置系 | 1 | RSI が売られ気味 | RSI < RSI_BUY_THRESHOLD（動的） |
-| 位置系 | 2 | 価格がSMA20下方（押し目） | SMA20 - ATR < 価格 <= SMA20 |
-| 位置系 | 3 | BB下限付近 | %B < 30 |
-| 勢い系 | A | MACDクロス済み | MACD > Signal |
-| 勢い系 | B | ヒストグラム回復中 | hist[-1] > hist[-2] > hist[-3] |
+| カテゴリ | 条件 | 閾値 | 必須 |
+|----------|------|------|:----:|
+| 位置系 | RSI が売られ気味 | RSI < RSI_BUY_THRESHOLD（動的） | ✅ |
+| 位置系 | BB下限付近 | %B < 30 | ✅ |
+| 勢い系 | MACDフレッシュモメンタム | MACD > Signal AND (フレッシュクロス5本以内 OR hist3本連続増加) | ✅ |
 
 ### Sell条件
 
-**発火: (位置系 >= 2) AND (勢い系 >= 1)**
+**発火: 位置系ALL AND 勢い系**
 
-| カテゴリ | # | 条件 | 閾値 |
-|----------|---|------|------|
-| 位置系 | 1 | RSI が買われ気味 | RSI > RSI_SELL_THRESHOLD（動的） |
-| 位置系 | 2 | 価格がSMA20上方（戻り） | SMA20 < 価格 < SMA20 + ATR |
-| 位置系 | 3 | BB上限付近 | %B > 70 |
-| 勢い系 | A | MACDクロス済み | MACD < Signal |
-| 勢い系 | B | ヒストグラム減退中 | hist[-1] < hist[-2] < hist[-3] |
+| カテゴリ | 条件 | 閾値 | 必須 |
+|----------|------|------|:----:|
+| 位置系 | RSI が買われ気味 | RSI > RSI_SELL_THRESHOLD（動的） | ✅ |
+| 位置系 | BB上限付近 | %B > 70 | ✅ |
+| 勢い系 | MACDフレッシュモメンタム | MACD < Signal AND (フレッシュクロス5本以内 OR hist3本連続減少) | ✅ |
 
 ### %B（ボリンジャーバンド位置）
 
@@ -96,27 +92,31 @@ else:
 - 本来のMTF（上位時間軸確認）の意図を正しく実装
 - 1hでは短期的に買いシグナルが出ても、4hが下降トレンドならブロック
 
-### ATRフィルター（レンジ相場抑制）
+### ATRフィルター（異常ボラ抑制）
 
-低ボラティリティ環境ではシグナルを抑制：
+異常なボラティリティ環境ではシグナルを抑制：
 
 | 条件 | 動作 |
 |------|------|
-| atr_ratio < 0.7 | Signal = "Wait" に強制変更 |
+| atr_ratio < 0.7 | Signal = "Wait" に強制変更（低ボラ / レンジ相場） |
+| atr_ratio > 3.0 | Signal = "Wait" に強制変更（極端高ボラ / スプレッド・スリッページリスク） |
 
 ### シグナル判定
 
 **Step 1: 1h足分析（analyze.sh）**
 ```
-# ATRフィルター（レンジ相場抑制）
+# ATRフィルター（異常ボラ抑制）
 if atr_ratio < 0.7:
     SIGNAL = "Wait"  # 低ボラ = レンジ相場の可能性
+elif atr_ratio > 3.0:
+    SIGNAL = "Wait"  # 極端高ボラ = スプレッド拡大・スリッページリスク
 
-elif BUY_COUNT >= 2 AND BUY_COUNT > SELL_COUNT:
-    SIGNAL = "Buy"  # 条件到達（MTFフィルターは後段で適用）
+# 位置系ALL + 勢い系の複合条件
+elif BUY_RSI AND BUY_BB AND BUY_MOMENTUM:
+    SIGNAL = "Buy"  # 全条件到達（MTFフィルターは後段で適用）
 
-elif SELL_COUNT >= 2 AND SELL_COUNT > BUY_COUNT:
-    SIGNAL = "Sell"  # 条件到達（MTFフィルターは後段で適用）
+elif SELL_RSI AND SELL_BB AND SELL_MOMENTUM:
+    SIGNAL = "Sell"  # 全条件到達（MTFフィルターは後段で適用）
 
 else:
     SIGNAL = "Wait"
