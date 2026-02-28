@@ -111,35 +111,35 @@ jobs:
             echo "" >> "$MD_FILE"
           fi
 
-          cat >> "$MD_FILE" << EOF
-
-## ${TIMESTAMP} UTC - ${SYMBOL} ${ACTION}
-
-| Item | Value |
-|------|-------|
-| Symbol | ${SYMBOL} |
-| Action | ${ACTION} |
-| Amount | ${AMOUNT} |
-| Entry Price | ${ENTRY_PRICE} |
-| Stop Loss | ${SL} |
-| Take Profit | ${TP} |
-
-### Analysis
-
-| Indicator | Value |
-|-----------|-------|
-| RSI | ${RSI} |
-| Rule Signal | ${RULE_SIGNAL} |
-| Trend (1h) | ${TREND_1H} |
-| Trend (4h) | ${TREND_4H} |
-| AI Confidence | ${AI_CONFIDENCE}% |
-
-### AI Summary
-
-${AI_SUMMARY}
-
----
-EOF
+          {
+            echo ""
+            echo "## ${TIMESTAMP} UTC - ${SYMBOL} ${ACTION}"
+            echo ""
+            echo "| Item | Value |"
+            echo "|------|-------|"
+            echo "| Symbol | ${SYMBOL} |"
+            echo "| Action | ${ACTION} |"
+            echo "| Amount | ${AMOUNT} |"
+            echo "| Entry Price | ${ENTRY_PRICE} |"
+            echo "| Stop Loss | ${SL} |"
+            echo "| Take Profit | ${TP} |"
+            echo ""
+            echo "### Analysis"
+            echo ""
+            echo "| Indicator | Value |"
+            echo "|-----------|-------|"
+            echo "| RSI | ${RSI} |"
+            echo "| Rule Signal | ${RULE_SIGNAL} |"
+            echo "| Trend (1h) | ${TREND_1H} |"
+            echo "| Trend (4h) | ${TREND_4H} |"
+            echo "| AI Confidence | ${AI_CONFIDENCE}% |"
+            echo ""
+            echo "### AI Summary"
+            echo ""
+            echo "${AI_SUMMARY}"
+            echo ""
+            echo "---"
+          } >> "$MD_FILE"
 
           echo "Entry logged to $CSV_FILE and $MD_FILE"
 
