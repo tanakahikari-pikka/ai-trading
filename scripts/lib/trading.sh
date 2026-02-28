@@ -130,13 +130,9 @@ build_final_result() {
     local ai_confidence="${13}"
     local ai_summary="${14}"
     local ai_risk="${15}"
-    local ai_recommendation="${16}"
-    local ai_learning_topic="${17}"
-    local ai_learning_example="${18}"
-    local ai_wait_for="${19}"
-    local bid="${20}"
-    local ask="${21}"
-    local ai_full="${22}"
+    local bid="${16}"
+    local ask="${17}"
+    local ai_full="${18}"
 
     jq -n \
         --arg decision "$decision" \
@@ -154,10 +150,6 @@ build_final_result() {
         --argjson ai_confidence "$ai_confidence" \
         --arg ai_summary "$ai_summary" \
         --arg ai_risk "$ai_risk" \
-        --arg ai_recommendation "$ai_recommendation" \
-        --arg ai_learning_topic "$ai_learning_topic" \
-        --arg ai_learning_example "$ai_learning_example" \
-        --argjson ai_wait_for "$ai_wait_for" \
         --argjson bid "$bid" \
         --argjson ask "$ask" \
         --argjson ai_full "$ai_full" \
@@ -179,14 +171,8 @@ build_final_result() {
                 decision: $ai_decision,
                 confidence: $ai_confidence,
                 summary: $ai_summary,
-                risk: $ai_risk,
-                recommendation: $ai_recommendation
+                risk: $ai_risk
             },
-            learning: {
-                topic: $ai_learning_topic,
-                example: $ai_learning_example
-            },
-            next_actions: $ai_wait_for,
             price: {
                 bid: $bid,
                 ask: $ask

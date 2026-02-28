@@ -1,5 +1,5 @@
 #!/bin/bash
-# Send notification to Discord via Webhook (Educational Format)
+# Send notification to Discord via Webhook
 # Usage: echo "$JSON_RESULT" | discord.sh
 # Requires: DISCORD_WEBHOOK_URL environment variable
 
@@ -46,14 +46,6 @@ AI_DECISION=$(echo "$RESULT" | jq -r '.ai_analysis.decision // "N/A"')
 AI_CONFIDENCE=$(echo "$RESULT" | jq -r '.ai_analysis.confidence // 0')
 AI_SUMMARY=$(echo "$RESULT" | jq -r '.ai_analysis.summary // ""')
 AI_RISK=$(echo "$RESULT" | jq -r '.ai_analysis.risk // "N/A"')
-AI_RECOMMENDATION=$(echo "$RESULT" | jq -r '.ai_analysis.recommendation // "N/A"')
-
-# Extract learning
-LEARNING_TOPIC=$(echo "$RESULT" | jq -r '.learning.topic // ""')
-LEARNING_EXAMPLE=$(echo "$RESULT" | jq -r '.learning.example // ""')
-
-# Extract next actions
-NEXT_ACTIONS=$(echo "$RESULT" | jq -r '.next_actions // [] | if length > 0 then map("• " + .) | join("\n") else "特になし" end')
 
 # Price
 BID=$(echo "$RESULT" | jq -r '.price.bid // "N/A"')
@@ -85,8 +77,6 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Truncate long text for Discord limits
 AI_SUMMARY_SHORT="${AI_SUMMARY:0:200}"
-LEARNING_EXAMPLE_SHORT="${LEARNING_EXAMPLE:0:300}"
-NEXT_ACTIONS_SHORT="${NEXT_ACTIONS:0:300}"
 
 # Build SL/TP display string
 if [[ "$SL_TP_ENABLED" == "true" && "$SL_PRICE" != "null" && "$TP_PRICE" != "null" ]]; then
@@ -116,10 +106,6 @@ PAYLOAD=$(jq -n \
     --arg ai_confidence "$AI_CONFIDENCE" \
     --arg ai_summary "$AI_SUMMARY_SHORT" \
     --arg ai_risk "$AI_RISK" \
-    --arg ai_recommendation "$AI_RECOMMENDATION" \
-    --arg learning_topic "$LEARNING_TOPIC" \
-    --arg learning_example "$LEARNING_EXAMPLE_SHORT" \
-    --arg next_actions "$NEXT_ACTIONS_SHORT" \
     --arg bid "$BID" \
     --arg ask "$ASK" \
     --arg sl_tp "$SL_TP_VALUE" \
@@ -165,21 +151,8 @@ PAYLOAD=$(jq -n \
                     name: "🛡️ SL/TP",
                     value: $sl_tp,
                     inline: true
-                },
-                {
-                    name: "📚 今日の学び: \($learning_topic)",
-                    value: $learning_example,
-                    inline: false
-                },
-                {
-                    name: "👀 次に注目すること",
-                    value: $next_actions,
-                    inline: false
                 }
             ],
-            footer: {
-                text: "推奨: \($ai_recommendation)"
-            },
             timestamp: $timestamp
         }]
     }')
