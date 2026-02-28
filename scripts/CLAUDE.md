@@ -75,16 +75,24 @@
 ## ルールベース判断
 
 **Buy条件（2/4以上で発火）:**
-1. RSI < 40
-2. 価格がSMA20付近（SMA20 × 0.99 < 価格 < SMA20 × 1.01）← 押し目検出
+1. RSI < RSI_BUY_THRESHOLD（動的閾値）
+2. 価格がSMA20下方（SMA20 - ATR < 価格 <= SMA20）← 押し目検出
 3. MACD > シグナルライン
 4. 価格 < BB下限付近
 
 **Sell条件（2/4以上で発火）:**
-1. RSI > 60
-2. 価格がSMA20付近（SMA20 × 0.99 < 価格 < SMA20 × 1.01）← 戻り検出
+1. RSI > RSI_SELL_THRESHOLD（動的閾値）
+2. 価格がSMA20上方（SMA20 < 価格 < SMA20 + ATR）← 戻り検出
 3. MACD < シグナルライン
 4. 価格 > BB上限付近
+
+**RSI動的閾値:**
+- 高ボラ（atr_ratio > 1.5）: 30/70（厳格）
+- 通常: 40/60（緩い）
+
+**フィルター:**
+- **ATRフィルター**: atr_ratio < 0.7 でシグナル抑制（レンジ相場対策）
+- **MTFフィルター**: 4h足で確認。Buy は 4h SMA20 > 4h SMA50、Sell は 4h SMA20 < 4h SMA50 の場合のみ許可
 
 ## Stop Loss / Take Profit
 

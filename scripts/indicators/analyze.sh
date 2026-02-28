@@ -61,7 +61,7 @@ SMA50_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/sma.sh" 50 2>/dev/null || echo '{"s
 EMA12_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/ema.sh" 12 2>/dev/null || echo '{"ema":0}')
 EMA26_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/ema.sh" 26 2>/dev/null || echo '{"ema":0}')
 MACD_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/macd.sh" 12 26 9 2>/dev/null || echo '{"macd":0,"signal":0,"histogram":0}')
-BB_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/bollinger.sh" 20 2 2>/dev/null || echo '{"upper":0,"middle":0,"lower":0,"position":"unknown"}')
+BB_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/bollinger.sh" 20 2 2>/dev/null || echo '{"upper":0,"middle":0,"lower":0,"position":"unknown","percent_b":50}')
 ATR_DATA=$(cat "$TEMP_FILE" | "$SCRIPT_DIR/atr.sh" 14 2>/dev/null || echo '{"atr":0,"atr_percent":0,"volatility":"unknown"}')
 
 rm -f "$TEMP_FILE"
@@ -81,6 +81,8 @@ BB_LOWER=$(echo "$BB_DATA" | jq -r '.lower // 0')
 BB_POSITION=$(echo "$BB_DATA" | jq -r '.position // "unknown"')
 ATR=$(echo "$ATR_DATA" | jq -r '.atr // 0')
 ATR_PCT=$(echo "$ATR_DATA" | jq -r '.atr_percent // 0')
+ATR_RATIO=$(echo "$ATR_DATA" | jq -r '.atr_ratio // 1')
+ATR_EMA=$(echo "$ATR_DATA" | jq -r '.atr_ema // null')
 VOLATILITY=$(echo "$ATR_DATA" | jq -r '.volatility // "unknown"')
 
 # Ensure numeric values
@@ -91,52 +93,67 @@ MACD=${MACD:-0}
 MACD_SIGNAL=${MACD_SIGNAL:-0}
 BB_MIDDLE=${BB_MIDDLE:-0}
 
-# Calculate BB band thresholds (30% into the band from lower/upper)
-BB_BUY_THRESHOLD=$(echo "$BB_LOWER + ($BB_MIDDLE - $BB_LOWER) * 0.3" | bc -l 2>/dev/null || echo 0)
-BB_SELL_THRESHOLD=$(echo "$BB_UPPER - ($BB_UPPER - $BB_MIDDLE) * 0.3" | bc -l 2>/dev/null || echo 0)
+# Extract %B from Bollinger Bands (already calculated in bollinger.sh)
+# %B = (price - lower) / (upper - lower) * 100
+# 0 = at lower band, 50 = at middle, 100 = at upper band
+PERCENT_B=$(echo "$BB_DATA" | jq -r '.percent_b // 50')
 
-# Calculate SMA20 proximity band (price within ±1% of SMA20)
-SMA20_BAND_UPPER=$(echo "$SMA20 * 1.01" | bc -l 2>/dev/null || echo 0)
-SMA20_BAND_LOWER=$(echo "$SMA20 * 0.99" | bc -l 2>/dev/null || echo 0)
-NEAR_SMA20=$(echo "$CURRENT_PRICE > $SMA20_BAND_LOWER && $CURRENT_PRICE < $SMA20_BAND_UPPER" | bc -l 2>/dev/null || echo 0)
+# Calculate SMA20 proximity bands (ATR-based, directional)
+# Buy: SMA20 - ATR < price <= SMA20 (pullback from below)
+# Sell: SMA20 < price < SMA20 + ATR (retracement from above)
+SMA20_BUY_LOWER=$(echo "$SMA20 - $ATR" | bc -l 2>/dev/null || echo 0)
+SMA20_SELL_UPPER=$(echo "$SMA20 + $ATR" | bc -l 2>/dev/null || echo 0)
+BUY_NEAR_SMA20=$(echo "$CURRENT_PRICE > $SMA20_BUY_LOWER && $CURRENT_PRICE <= $SMA20" | bc -l 2>/dev/null || echo 0)
+SELL_NEAR_SMA20=$(echo "$CURRENT_PRICE > $SMA20 && $CURRENT_PRICE < $SMA20_SELL_UPPER" | bc -l 2>/dev/null || echo 0)
 
 # Determine SMA trend alignment (MTF filter)
 SMA_TREND_UP=$(echo "$SMA20 > $SMA50" | bc -l 2>/dev/null || echo 0)
 SMA_TREND_DOWN=$(echo "$SMA20 < $SMA50" | bc -l 2>/dev/null || echo 0)
 
+# Dynamic RSI thresholds based on ATR ratio
+# High volatility (atr_ratio > 1.5): stricter thresholds (30/70)
+# Normal volatility: relaxed thresholds (40/60)
+HIGH_VOLATILITY=$(echo "$ATR_RATIO > 1.5" | bc -l 2>/dev/null || echo 0)
+if [[ $HIGH_VOLATILITY -eq 1 ]]; then
+    RSI_BUY_THRESHOLD=30
+    RSI_SELL_THRESHOLD=70
+else
+    RSI_BUY_THRESHOLD=40
+    RSI_SELL_THRESHOLD=60
+fi
+
 # Rule-based analysis (2/4 conditions for signal)
 # Buy conditions
-BUY_RSI=$(echo "$RSI < 40" | bc -l 2>/dev/null || echo 0)
-BUY_NEAR_SMA20=$NEAR_SMA20  # Price within ±1% of SMA20 (pullback detection)
+BUY_RSI=$(echo "$RSI < $RSI_BUY_THRESHOLD" | bc -l 2>/dev/null || echo 0)
+# BUY_NEAR_SMA20 already calculated above (SMA20 - ATR < price <= SMA20)
 BUY_MACD=$(echo "$MACD > $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
-BUY_BB=$(echo "$CURRENT_PRICE < $BB_BUY_THRESHOLD" | bc -l 2>/dev/null || echo 0)
+# %B < 30 means price is in the lower 30% of the band (normalized, volatility-independent)
+BUY_BB=$(echo "$PERCENT_B < 30" | bc -l 2>/dev/null || echo 0)
 BUY_COUNT=$((BUY_RSI + BUY_NEAR_SMA20 + BUY_MACD + BUY_BB))
 
 # Sell conditions
-SELL_RSI=$(echo "$RSI > 60" | bc -l 2>/dev/null || echo 0)
-SELL_NEAR_SMA20=$NEAR_SMA20  # Price within ±1% of SMA20 (retracement detection)
+SELL_RSI=$(echo "$RSI > $RSI_SELL_THRESHOLD" | bc -l 2>/dev/null || echo 0)
+# SELL_NEAR_SMA20 already calculated above (SMA20 < price < SMA20 + ATR)
 SELL_MACD=$(echo "$MACD < $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
-SELL_BB=$(echo "$CURRENT_PRICE > $BB_SELL_THRESHOLD" | bc -l 2>/dev/null || echo 0)
+# %B > 70 means price is in the upper 30% of the band (normalized, volatility-independent)
+SELL_BB=$(echo "$PERCENT_B > 70" | bc -l 2>/dev/null || echo 0)
 SELL_COUNT=$((SELL_RSI + SELL_NEAR_SMA20 + SELL_MACD + SELL_BB))
 
-# Determine signal (2/4 threshold + MTF alignment)
+# Check ATR filter (range market suppression)
+LOW_VOLATILITY=$(echo "$ATR_RATIO < 0.7" | bc -l 2>/dev/null || echo 0)
+
+# Determine signal (2/4 threshold + ATR filter)
+# Note: MTF filter is applied in auto-trade.sh using 4h timeframe data
 SIGNAL="Wait"
-if [[ $BUY_COUNT -ge 2 && $BUY_COUNT -gt $SELL_COUNT ]]; then
-    # Buy only allowed when SMA20 > SMA50 (uptrend)
-    if [[ $SMA_TREND_UP -eq 1 ]]; then
-        SIGNAL="Buy"
-    else
-        SIGNAL="Wait"
-        echo "  [MTF Filter] Buy blocked: SMA20 < SMA50 (downtrend)" >&2
-    fi
+
+# ATR filter: suppress signals in low volatility (range market)
+if [[ $LOW_VOLATILITY -eq 1 ]]; then
+    SIGNAL="Wait"
+    echo "  [ATR Filter] Signal blocked: atr_ratio=$ATR_RATIO < 0.7 (low volatility / range market)" >&2
+elif [[ $BUY_COUNT -ge 2 && $BUY_COUNT -gt $SELL_COUNT ]]; then
+    SIGNAL="Buy"
 elif [[ $SELL_COUNT -ge 2 && $SELL_COUNT -gt $BUY_COUNT ]]; then
-    # Sell only allowed when SMA20 < SMA50 (downtrend)
-    if [[ $SMA_TREND_DOWN -eq 1 ]]; then
-        SIGNAL="Sell"
-    else
-        SIGNAL="Wait"
-        echo "  [MTF Filter] Sell blocked: SMA20 > SMA50 (uptrend)" >&2
-    fi
+    SIGNAL="Sell"
 fi
 
 # Determine trend
@@ -148,11 +165,14 @@ elif (( $(echo "$CURRENT_PRICE < $SMA20 && $SMA20 < $SMA50" | bc -l 2>/dev/null 
 fi
 
 echo "--- Rule Analysis ---" >&2
+echo "RSI Thresholds: buy<$RSI_BUY_THRESHOLD sell>$RSI_SELL_THRESHOLD (high_vol=$HIGH_VOLATILITY)" >&2
 echo "Buy conditions: $BUY_COUNT/4 (RSI:$BUY_RSI NEAR_SMA20:$BUY_NEAR_SMA20 MACD:$BUY_MACD BB:$BUY_BB)" >&2
 echo "Sell conditions: $SELL_COUNT/4 (RSI:$SELL_RSI NEAR_SMA20:$SELL_NEAR_SMA20 MACD:$SELL_MACD BB:$SELL_BB)" >&2
-echo "SMA20 Proximity: near=$NEAR_SMA20 (band: $SMA20_BAND_LOWER - $SMA20_BAND_UPPER)" >&2
+echo "Bollinger %B: $PERCENT_B (buy<30, sell>70)" >&2
+echo "SMA20 Proximity: buy=$BUY_NEAR_SMA20 (SMA20-ATR=$SMA20_BUY_LOWER to SMA20=$SMA20) sell=$SELL_NEAR_SMA20 (SMA20=$SMA20 to SMA20+ATR=$SMA20_SELL_UPPER)" >&2
 echo "SMA20 Slope: up=$SMA20_SLOPE_UP down=$SMA20_SLOPE_DOWN (AI参考用)" >&2
-echo "MTF Filter: SMA20 vs SMA50 = $(if [[ $SMA_TREND_UP -eq 1 ]]; then echo 'Uptrend'; elif [[ $SMA_TREND_DOWN -eq 1 ]]; then echo 'Downtrend'; else echo 'Flat'; fi)" >&2
+echo "ATR Filter: atr_ratio=$ATR_RATIO (low_vol=$LOW_VOLATILITY, threshold=0.7)" >&2
+echo "1h SMA Trend: SMA20 vs SMA50 = $(if [[ $SMA_TREND_UP -eq 1 ]]; then echo 'Uptrend'; elif [[ $SMA_TREND_DOWN -eq 1 ]]; then echo 'Downtrend'; else echo 'Flat'; fi) (参考用、MTFフィルターは4hで適用)" >&2
 echo "Signal: $SIGNAL" >&2
 echo "Trend: $TREND" >&2
 
@@ -170,8 +190,15 @@ OUTPUT=$(jq -n \
     --argjson bb_middle "${BB_MIDDLE:-0}" \
     --argjson bb_lower "${BB_LOWER:-0}" \
     --arg bb_position "${BB_POSITION:-unknown}" \
+    --argjson percent_b "${PERCENT_B:-50}" \
     --argjson atr "${ATR:-0}" \
     --argjson atr_pct "${ATR_PCT:-0}" \
+    --argjson atr_ema "${ATR_EMA:-null}" \
+    --argjson atr_ratio "${ATR_RATIO:-1}" \
+    --argjson low_volatility "${LOW_VOLATILITY:-0}" \
+    --argjson high_volatility "${HIGH_VOLATILITY:-0}" \
+    --argjson rsi_buy_threshold "${RSI_BUY_THRESHOLD:-40}" \
+    --argjson rsi_sell_threshold "${RSI_SELL_THRESHOLD:-60}" \
     --arg volatility "${VOLATILITY:-unknown}" \
     --argjson current_price "${CURRENT_PRICE:-0}" \
     --arg signal "$SIGNAL" \
@@ -188,9 +215,8 @@ OUTPUT=$(jq -n \
     --argjson sell_bb "${SELL_BB:-0}" \
     --argjson sma_trend_up "${SMA_TREND_UP:-0}" \
     --argjson sma_trend_down "${SMA_TREND_DOWN:-0}" \
-    --argjson near_sma20 "${NEAR_SMA20:-0}" \
-    --argjson sma20_band_upper "${SMA20_BAND_UPPER:-0}" \
-    --argjson sma20_band_lower "${SMA20_BAND_LOWER:-0}" \
+    --argjson sma20_buy_lower "${SMA20_BUY_LOWER:-0}" \
+    --argjson sma20_sell_upper "${SMA20_SELL_UPPER:-0}" \
     --argjson sma20_slope_up "${SMA20_SLOPE_UP:-0}" \
     --argjson sma20_slope_down "${SMA20_SLOPE_DOWN:-0}" \
     '{
@@ -210,11 +236,14 @@ OUTPUT=$(jq -n \
                 upper: $bb_upper,
                 middle: $bb_middle,
                 lower: $bb_lower,
-                position: $bb_position
+                position: $bb_position,
+                percent_b: $percent_b
             },
             atr: {
                 value: $atr,
                 percent: $atr_pct,
+                atr_ema: $atr_ema,
+                atr_ratio: $atr_ratio,
                 volatility: $volatility
             }
         },
@@ -238,9 +267,10 @@ OUTPUT=$(jq -n \
                 }
             },
             sma20_proximity: {
-                near_sma20: ($near_sma20 == 1),
-                band_upper: $sma20_band_upper,
-                band_lower: $sma20_band_lower
+                buy_zone: ($buy_near_sma20 == 1),
+                sell_zone: ($sell_near_sma20 == 1),
+                buy_lower: $sma20_buy_lower,
+                sell_upper: $sma20_sell_upper
             },
             sma20_slope: {
                 slope_up: ($sma20_slope_up == 1),
@@ -250,6 +280,17 @@ OUTPUT=$(jq -n \
                 sma20_above_sma50: ($sma_trend_up == 1),
                 sma20_below_sma50: ($sma_trend_down == 1),
                 trend_direction: (if $sma_trend_up == 1 then "uptrend" elif $sma_trend_down == 1 then "downtrend" else "flat" end)
+            },
+            atr_filter: {
+                atr_ratio: $atr_ratio,
+                low_volatility: ($low_volatility == 1),
+                threshold: 0.7
+            },
+            rsi_thresholds: {
+                buy_threshold: $rsi_buy_threshold,
+                sell_threshold: $rsi_sell_threshold,
+                high_volatility: ($high_volatility == 1),
+                mode: (if $high_volatility == 1 then "strict (30/70)" else "relaxed (40/60)" end)
             }
         }
     }')
