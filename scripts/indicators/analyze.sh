@@ -22,6 +22,34 @@ fi
 # Get current price
 CURRENT_PRICE=$(echo "$INPUT" | jq -r '[.close[] | select(. != null)] | last // 0')
 
+# Calculate SMA20 slope (current vs 3 periods ago)
+# Extract SMA20 values at current position and 3 periods back
+SMA20_SLOPE_DATA=$(echo "$INPUT" | jq '
+    [.close[] | select(. != null)] as $closes |
+    if ($closes | length) >= 23 then
+        # SMA20 at current position (last 20 values)
+        ($closes[-20:] | add / 20) as $sma20_current |
+        # SMA20 at 3 periods ago (values from -23 to -4)
+        ($closes[-23:-3] | add / 20) as $sma20_3ago |
+        {
+            sma20_current: $sma20_current,
+            sma20_3ago: $sma20_3ago,
+            slope_up: ($sma20_current > $sma20_3ago),
+            slope_down: ($sma20_current < $sma20_3ago)
+        }
+    else
+        {
+            sma20_current: 0,
+            sma20_3ago: 0,
+            slope_up: false,
+            slope_down: false
+        }
+    end
+')
+SMA20_SLOPE_UP=$(echo "$SMA20_SLOPE_DATA" | jq -r 'if .slope_up then 1 else 0 end')
+SMA20_SLOPE_DOWN=$(echo "$SMA20_SLOPE_DATA" | jq -r 'if .slope_down then 1 else 0 end')
+SMA20_3AGO=$(echo "$SMA20_SLOPE_DATA" | jq -r '.sma20_3ago // 0')
+
 echo "=== Technical Analysis ===" >&2
 echo "Current Price: $CURRENT_PRICE" >&2
 echo "" >&2
@@ -74,17 +102,17 @@ SMA_TREND_DOWN=$(echo "$SMA20 < $SMA50" | bc -l 2>/dev/null || echo 0)
 # Rule-based analysis (2/4 conditions for signal)
 # Buy conditions
 BUY_RSI=$(echo "$RSI < 40" | bc -l 2>/dev/null || echo 0)
-BUY_SMA=$(echo "$CURRENT_PRICE > $SMA20" | bc -l 2>/dev/null || echo 0)
+BUY_SMA_SLOPE=$SMA20_SLOPE_UP  # SMA20 sloping up (current > 3 periods ago)
 BUY_MACD=$(echo "$MACD > $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
 BUY_BB=$(echo "$CURRENT_PRICE < $BB_BUY_THRESHOLD" | bc -l 2>/dev/null || echo 0)
-BUY_COUNT=$((BUY_RSI + BUY_SMA + BUY_MACD + BUY_BB))
+BUY_COUNT=$((BUY_RSI + BUY_SMA_SLOPE + BUY_MACD + BUY_BB))
 
 # Sell conditions
 SELL_RSI=$(echo "$RSI > 60" | bc -l 2>/dev/null || echo 0)
-SELL_SMA=$(echo "$CURRENT_PRICE < $SMA20" | bc -l 2>/dev/null || echo 0)
+SELL_SMA_SLOPE=$SMA20_SLOPE_DOWN  # SMA20 sloping down (current < 3 periods ago)
 SELL_MACD=$(echo "$MACD < $MACD_SIGNAL" | bc -l 2>/dev/null || echo 0)
 SELL_BB=$(echo "$CURRENT_PRICE > $BB_SELL_THRESHOLD" | bc -l 2>/dev/null || echo 0)
-SELL_COUNT=$((SELL_RSI + SELL_SMA + SELL_MACD + SELL_BB))
+SELL_COUNT=$((SELL_RSI + SELL_SMA_SLOPE + SELL_MACD + SELL_BB))
 
 # Determine signal (2/4 threshold + MTF alignment)
 SIGNAL="Wait"
@@ -115,8 +143,9 @@ elif (( $(echo "$CURRENT_PRICE < $SMA20 && $SMA20 < $SMA50" | bc -l 2>/dev/null 
 fi
 
 echo "--- Rule Analysis ---" >&2
-echo "Buy conditions: $BUY_COUNT/4 (RSI:$BUY_RSI SMA:$BUY_SMA MACD:$BUY_MACD BB:$BUY_BB)" >&2
-echo "Sell conditions: $SELL_COUNT/4 (RSI:$SELL_RSI SMA:$SELL_SMA MACD:$SELL_MACD BB:$SELL_BB)" >&2
+echo "Buy conditions: $BUY_COUNT/4 (RSI:$BUY_RSI SMA_SLOPE:$BUY_SMA_SLOPE MACD:$BUY_MACD BB:$BUY_BB)" >&2
+echo "Sell conditions: $SELL_COUNT/4 (RSI:$SELL_RSI SMA_SLOPE:$SELL_SMA_SLOPE MACD:$SELL_MACD BB:$SELL_BB)" >&2
+echo "SMA20 Slope: current=$SMA20 vs 3ago=$SMA20_3AGO (up:$SMA20_SLOPE_UP down:$SMA20_SLOPE_DOWN)" >&2
 echo "MTF Filter: SMA20 vs SMA50 = $(if [[ $SMA_TREND_UP -eq 1 ]]; then echo 'Uptrend'; elif [[ $SMA_TREND_DOWN -eq 1 ]]; then echo 'Downtrend'; else echo 'Flat'; fi)" >&2
 echo "Signal: $SIGNAL" >&2
 echo "Trend: $TREND" >&2
@@ -144,15 +173,17 @@ OUTPUT=$(jq -n \
     --argjson buy_count "$BUY_COUNT" \
     --argjson sell_count "$SELL_COUNT" \
     --argjson buy_rsi "${BUY_RSI:-0}" \
-    --argjson buy_sma "${BUY_SMA:-0}" \
+    --argjson buy_sma_slope "${BUY_SMA_SLOPE:-0}" \
     --argjson buy_macd "${BUY_MACD:-0}" \
     --argjson buy_bb "${BUY_BB:-0}" \
     --argjson sell_rsi "${SELL_RSI:-0}" \
-    --argjson sell_sma "${SELL_SMA:-0}" \
+    --argjson sell_sma_slope "${SELL_SMA_SLOPE:-0}" \
     --argjson sell_macd "${SELL_MACD:-0}" \
     --argjson sell_bb "${SELL_BB:-0}" \
     --argjson sma_trend_up "${SMA_TREND_UP:-0}" \
     --argjson sma_trend_down "${SMA_TREND_DOWN:-0}" \
+    --argjson sma20_slope_up "${SMA20_SLOPE_UP:-0}" \
+    --argjson sma20_slope_down "${SMA20_SLOPE_DOWN:-0}" \
     '{
         current_price: $current_price,
         indicators: {
@@ -186,16 +217,20 @@ OUTPUT=$(jq -n \
             conditions: {
                 buy: {
                     rsi_oversold: ($buy_rsi == 1),
-                    above_sma20: ($buy_sma == 1),
+                    sma20_slope_up: ($buy_sma_slope == 1),
                     macd_bullish: ($buy_macd == 1),
                     near_bb_lower: ($buy_bb == 1)
                 },
                 sell: {
                     rsi_overbought: ($sell_rsi == 1),
-                    below_sma20: ($sell_sma == 1),
+                    sma20_slope_down: ($sell_sma_slope == 1),
                     macd_bearish: ($sell_macd == 1),
                     near_bb_upper: ($sell_bb == 1)
                 }
+            },
+            sma20_slope: {
+                slope_up: ($sma20_slope_up == 1),
+                slope_down: ($sma20_slope_down == 1)
             },
             mtf_filter: {
                 sma20_above_sma50: ($sma_trend_up == 1),
