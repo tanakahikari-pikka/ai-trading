@@ -181,6 +181,27 @@ else:
 
 ---
 
+## 7. ボラティリティ判定基準
+
+| レベル | 条件 | 動作 |
+|--------|------|------|
+| high | ATR% > 1.0% | AI分析実行 |
+| medium | ATR% > 0.5% | AI分析実行 |
+| low | ATR% ≤ 0.5% | プレフィルターでスキップ |
+
+---
+
+## 8. 環境変数
+
+| 変数 | 説明 |
+|------|------|
+| `SAXO_ACCESS_TOKEN` | Saxo Bank API トークン |
+| `OPENAI_API_KEY` | OpenAI API キー |
+| `DISCORD_WEBHOOK_URL` | Discord通知（見送り用） |
+| `DISCORD_ENTRY_WEBHOOK_URL` | Discord通知（エントリー用） |
+
+---
+
 ## 関連ファイル
 
 | ファイル | 役割 |
@@ -190,4 +211,5 @@ else:
 | `scripts/indicators/analyze.sh` | テクニカル分析 |
 | `scripts/ai/analyze-trade.sh` | AI分析 |
 | `scripts/notify/discord.sh` | Discord通知 |
+| `scripts/config/currencies/*.json` | 通貨ペア設定 |
 | `rules/trading-rules.md` | 運用ルール詳細 |
