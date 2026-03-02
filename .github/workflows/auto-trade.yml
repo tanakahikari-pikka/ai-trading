@@ -17,6 +17,9 @@ on:
           - EURJPY
           - XAUUSD
 
+permissions:
+  contents: write
+
 jobs:
   trade:
     runs-on: ubuntu-latest
@@ -48,6 +51,7 @@ jobs:
           SAXO_BASE_URL: https://gateway.saxobank.com/sim/openapi
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_ENTRY_WEBHOOK_URL: ${{ secrets.DISCORD_ENTRY_WEBHOOK_URL }}
         run: |
           chmod +x scripts/*.sh scripts/**/*.sh
 
