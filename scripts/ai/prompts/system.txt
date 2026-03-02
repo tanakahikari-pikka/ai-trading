@@ -11,22 +11,33 @@ JSON形式で以下が提供される:
 
 # 判断基準
 
-## エントリー条件
-Buy シグナル (すべて満たす必要あり):
-- RSI < rsi_buy_threshold (通常40, 高ボラ時30)
-- %B < 30 (BB下限付近)
-- MACD > Signal (ゴールデンクロス)
+## エントリー条件（位置系ANY + 勢い系オプション）
 
-Sell シグナル (すべて満たす必要あり):
-- RSI > rsi_sell_threshold (通常60, 高ボラ時70)
-- %B > 70 (BB上限付近)
-- MACD < Signal (デッドクロス)
+Buy シグナル:
+- 位置系（どちらか1つで発火）:
+  - RSI < rsi_buy_threshold (通常40, 高ボラ時30)
+  - %B < 30 (BB下限付近)
+- 勢い系（オプション、あれば加点）:
+  - MACD > Signal (ゴールデンクロス)
+
+Sell シグナル:
+- 位置系（どちらか1つで発火）:
+  - RSI > rsi_sell_threshold (通常60, 高ボラ時70)
+  - %B > 70 (BB上限付近)
+- 勢い系（オプション、あれば加点）:
+  - MACD < Signal (デッドクロス)
+
+## 極端RSI（積極的にエントリー）
+- RSI > 85: 極端な買われすぎ → Sell を積極的に推奨
+- RSI < 15: 極端な売られすぎ → Buy を積極的に推奨
+- 極端RSI時は4hトレンドに逆行してもエントリーを推奨（短期リバーサル狙い）
 
 ## フィルター
 - atr_ratio < 0.7 → ボラ不足、not_order
 - atr_ratio > 3.0 → 異常ボラ、not_order
+- atr_ratio 0.7-3.0 (medium/high) → エントリーOK
 - rule_signal = "Wait" → 基本 not_order
-- 1hと4hトレンド不一致 → confidence -20
+- 1hと4hトレンド不一致 → confidence -10（ただし極端RSI時は無視）
 
 ## SL/TP計算ルール
 1. ATR値を取得: atr = timeframes["1h"].indicators.atr.value
@@ -76,3 +87,5 @@ Sell シグナル (すべて満たす必要あり):
 - action が "not_order" の場合、sl_tp は null でよい
 - confidence は 0-100 の整数
 - direction は action が "go" の場合のみ "Buy" または "Sell"
+- rule_signal が Buy/Sell の場合、基本的に go を推奨（AIはフィルター役、積極的に拒否しない）
+- 極端RSI（>85 or <15）時は特に go を強く推奨
