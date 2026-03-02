@@ -66,93 +66,139 @@ jobs:
           # Save result for logging
           echo "$RESULT" > /tmp/trade_result.json
 
-      - name: Log Entry
+      - name: Upload trade result
         if: steps.trade.outputs.decision == 'go'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trade-result-${{ matrix.currency }}
+          path: /tmp/trade_result.json
+          retention-days: 1
+
+      - name: Summary
+        if: always()
         run: |
-          RESULT=$(cat /tmp/trade_result.json)
+          echo "Auto trade (${{ matrix.currency }}) completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Decision: ${{ steps.trade.outputs.decision }}"
+
+  # Collect and commit logs after all trades complete
+  commit-logs:
+    needs: trade
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: trade-result-*
+          merge-multiple: false
+
+      - name: Process and commit logs
+        run: |
+          # Check if any artifacts exist
+          if [ ! -d "artifacts" ] || [ -z "$(ls -A artifacts 2>/dev/null)" ]; then
+            echo "No trade results to log"
+            exit 0
+          fi
+
+          mkdir -p logs/entries
           TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S')
           DATE=$(date -u '+%Y-%m-%d')
-
-          # Extract values from result
-          SYMBOL=$(echo "$RESULT" | jq -r '.symbol')
-          ACTION=$(echo "$RESULT" | jq -r '.action')
-          AMOUNT=$(echo "$RESULT" | jq -r '.amount')
-          ENTRY_PRICE=$(echo "$RESULT" | jq -r 'if .action == "Buy" then .price.ask else .price.bid end')
-          SL=$(echo "$RESULT" | jq -r '.sl_tp.stop_loss // "N/A"')
-          TP=$(echo "$RESULT" | jq -r '.sl_tp.take_profit // "N/A"')
-          RSI=$(echo "$RESULT" | jq -r '.analysis.rsi')
-          RULE_SIGNAL=$(echo "$RESULT" | jq -r '.analysis.rule_signal')
-          AI_CONFIDENCE=$(echo "$RESULT" | jq -r '.ai_analysis.confidence')
-          AI_SUMMARY=$(echo "$RESULT" | jq -r '.ai_analysis.summary')
-          TREND_1H=$(echo "$RESULT" | jq -r '.analysis.trend_1h')
-          TREND_4H=$(echo "$RESULT" | jq -r '.analysis.trend_4h')
-
-          # Create logs directory
-          mkdir -p logs/entries
-
-          # Append to CSV (create header if not exists, use jq @csv for proper escaping)
           CSV_FILE="logs/entries.csv"
+          MD_FILE="logs/entries/${DATE}.md"
+          ENTRIES_ADDED=0
+
+          # Create CSV header if needed
           if [ ! -f "$CSV_FILE" ]; then
             echo "timestamp,symbol,action,amount,entry_price,sl,tp,rsi,ai_confidence,trend_1h,trend_4h,ai_summary" > "$CSV_FILE"
           fi
 
-          # Use jq to properly escape CSV fields (handles commas, quotes in AI_SUMMARY)
-          echo "$RESULT" | jq -r --arg ts "$TIMESTAMP" '
-            [$ts, .symbol, .action, (.amount | tostring),
-             (if .action == "Buy" then .price.ask else .price.bid end | tostring),
-             (.sl_tp.stop_loss // "N/A" | tostring),
-             (.sl_tp.take_profit // "N/A" | tostring),
-             (.analysis.rsi | tostring),
-             (.ai_analysis.confidence | tostring),
-             .analysis.trend_1h, .analysis.trend_4h,
-             .ai_analysis.summary] | @csv
-          ' >> "$CSV_FILE"
-
-          # Append to daily MD file
-          MD_FILE="logs/entries/${DATE}.md"
+          # Create MD header if needed
           if [ ! -f "$MD_FILE" ]; then
             echo "# Entry Log - ${DATE}" > "$MD_FILE"
             echo "" >> "$MD_FILE"
           fi
 
-          {
-            echo ""
-            echo "## ${TIMESTAMP} UTC - ${SYMBOL} ${ACTION}"
-            echo ""
-            echo "| Item | Value |"
-            echo "|------|-------|"
-            echo "| Symbol | ${SYMBOL} |"
-            echo "| Action | ${ACTION} |"
-            echo "| Amount | ${AMOUNT} |"
-            echo "| Entry Price | ${ENTRY_PRICE} |"
-            echo "| Stop Loss | ${SL} |"
-            echo "| Take Profit | ${TP} |"
-            echo ""
-            echo "### Analysis"
-            echo ""
-            echo "| Indicator | Value |"
-            echo "|-----------|-------|"
-            echo "| RSI | ${RSI} |"
-            echo "| Rule Signal | ${RULE_SIGNAL} |"
-            echo "| Trend (1h) | ${TREND_1H} |"
-            echo "| Trend (4h) | ${TREND_4H} |"
-            echo "| AI Confidence | ${AI_CONFIDENCE}% |"
-            echo ""
-            echo "### AI Summary"
-            echo ""
-            echo "${AI_SUMMARY}"
-            echo ""
-            echo "---"
-          } >> "$MD_FILE"
+          # Process each trade result
+          for dir in artifacts/trade-result-*/; do
+            if [ -f "${dir}trade_result.json" ]; then
+              RESULT=$(cat "${dir}trade_result.json")
+              SYMBOL=$(echo "$RESULT" | jq -r '.symbol')
+              ACTION=$(echo "$RESULT" | jq -r '.action')
 
-          echo "Entry logged to $CSV_FILE and $MD_FILE"
+              echo "Processing: $SYMBOL $ACTION"
 
-      - name: Commit and Push Entry Log
-        if: steps.trade.outputs.decision == 'go'
-        run: |
+              # Append to CSV
+              echo "$RESULT" | jq -r --arg ts "$TIMESTAMP" '
+                [$ts, .symbol, .action, (.amount | tostring),
+                 (if .action == "Buy" then .price.ask else .price.bid end | tostring),
+                 (.sl_tp.stop_loss // "N/A" | tostring),
+                 (.sl_tp.take_profit // "N/A" | tostring),
+                 (.analysis.rsi | tostring),
+                 (.ai_analysis.confidence | tostring),
+                 .analysis.trend_1h, .analysis.trend_4h,
+                 .ai_analysis.summary] | @csv
+              ' >> "$CSV_FILE"
+
+              # Append to MD
+              AMOUNT=$(echo "$RESULT" | jq -r '.amount')
+              ENTRY_PRICE=$(echo "$RESULT" | jq -r 'if .action == "Buy" then .price.ask else .price.bid end')
+              SL=$(echo "$RESULT" | jq -r '.sl_tp.stop_loss // "N/A"')
+              TP=$(echo "$RESULT" | jq -r '.sl_tp.take_profit // "N/A"')
+              RSI=$(echo "$RESULT" | jq -r '.analysis.rsi')
+              RULE_SIGNAL=$(echo "$RESULT" | jq -r '.analysis.rule_signal')
+              AI_CONFIDENCE=$(echo "$RESULT" | jq -r '.ai_analysis.confidence')
+              AI_SUMMARY=$(echo "$RESULT" | jq -r '.ai_analysis.summary')
+              TREND_1H=$(echo "$RESULT" | jq -r '.analysis.trend_1h')
+              TREND_4H=$(echo "$RESULT" | jq -r '.analysis.trend_4h')
+
+              {
+                echo ""
+                echo "## ${TIMESTAMP} UTC - ${SYMBOL} ${ACTION}"
+                echo ""
+                echo "| Item | Value |"
+                echo "|------|-------|"
+                echo "| Symbol | ${SYMBOL} |"
+                echo "| Action | ${ACTION} |"
+                echo "| Amount | ${AMOUNT} |"
+                echo "| Entry Price | ${ENTRY_PRICE} |"
+                echo "| Stop Loss | ${SL} |"
+                echo "| Take Profit | ${TP} |"
+                echo ""
+                echo "### Analysis"
+                echo ""
+                echo "| Indicator | Value |"
+                echo "|-----------|-------|"
+                echo "| RSI | ${RSI} |"
+                echo "| Rule Signal | ${RULE_SIGNAL} |"
+                echo "| Trend (1h) | ${TREND_1H} |"
+                echo "| Trend (4h) | ${TREND_4H} |"
+                echo "| AI Confidence | ${AI_CONFIDENCE}% |"
+                echo ""
+                echo "### AI Summary"
+                echo ""
+                echo "${AI_SUMMARY}"
+                echo ""
+                echo "---"
+              } >> "$MD_FILE"
+
+              ENTRIES_ADDED=$((ENTRIES_ADDED + 1))
+            fi
+          done
+
+          if [ $ENTRIES_ADDED -eq 0 ]; then
+            echo "No entries to commit"
+            exit 0
+          fi
+
+          echo "Added $ENTRIES_ADDED entries"
+
+          # Commit and push
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git add logs/
 
           if git diff --staged --quiet; then
@@ -160,26 +206,5 @@ jobs:
             exit 0
           fi
 
-          SYMBOL=$(cat /tmp/trade_result.json | jq -r '.symbol')
-          ACTION=$(cat /tmp/trade_result.json | jq -r '.action')
-          git commit -m "log: ${SYMBOL} ${ACTION} entry at $(date -u '+%Y-%m-%d %H:%M UTC')"
-
-          # Retry push with rebase to handle concurrent matrix jobs
-          MAX_RETRIES=5
-          for i in $(seq 1 $MAX_RETRIES); do
-            if git push; then
-              echo "Push successful"
-              exit 0
-            fi
-            echo "Push failed (attempt $i/$MAX_RETRIES), pulling with rebase..."
-            git pull --rebase
-          done
-
-          echo "Failed to push after $MAX_RETRIES attempts"
-          exit 1
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "Auto trade (${{ matrix.currency }}) completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "Decision: ${{ steps.trade.outputs.decision }}"
+          git commit -m "log: $ENTRIES_ADDED entries at $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
