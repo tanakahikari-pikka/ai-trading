@@ -119,22 +119,35 @@ SMA20_4H=$(extract_sma20 "$ANALYSIS_4H")
 SMA50_4H=$(extract_sma50 "$ANALYSIS_4H")
 
 # Apply MTF filter using 4h timeframe
+# Allow signals when 4h trend aligns OR is sideways (SMA difference < 0.1%)
 MTF_BLOCKED=false
+MTF_SIDEWAYS_THRESHOLD=0.1  # percentage
+
 if [[ "$RULE_SIGNAL" == "Buy" ]]; then
-    # Buy only allowed when 4h SMA20 > SMA50 (uptrend)
-    MTF_OK=$(echo "$SMA20_4H > $SMA50_4H" | bc -l 2>/dev/null || echo 0)
-    if [[ "$MTF_OK" != "1" ]]; then
+    # Calculate SMA difference percentage
+    SMA_DIFF_PCT=$(echo "scale=4; ($SMA20_4H - $SMA50_4H) / $SMA50_4H * 100" | bc -l 2>/dev/null || echo 0)
+    # Buy allowed when 4h uptrend (SMA20 > SMA50) OR sideways (diff within threshold)
+    IS_UPTREND=$(echo "$SMA20_4H > $SMA50_4H" | bc -l 2>/dev/null || echo 0)
+    IS_SIDEWAYS=$(echo "$SMA_DIFF_PCT >= -$MTF_SIDEWAYS_THRESHOLD && $SMA_DIFF_PCT <= $MTF_SIDEWAYS_THRESHOLD" | bc -l 2>/dev/null || echo 0)
+    if [[ "$IS_UPTREND" != "1" && "$IS_SIDEWAYS" != "1" ]]; then
         RULE_SIGNAL="Wait"
         MTF_BLOCKED=true
-        echo "  [MTF Filter] Buy blocked: 4h SMA20=$SMA20_4H < SMA50=$SMA50_4H (downtrend)" >&2
+        echo "  [MTF Filter] Buy blocked: 4h SMA20=$SMA20_4H < SMA50=$SMA50_4H (downtrend, diff=${SMA_DIFF_PCT}%)" >&2
+    elif [[ "$IS_SIDEWAYS" == "1" && "$IS_UPTREND" != "1" ]]; then
+        echo "  [MTF Filter] Buy allowed: 4h sideways (diff=${SMA_DIFF_PCT}%)" >&2
     fi
 elif [[ "$RULE_SIGNAL" == "Sell" ]]; then
-    # Sell only allowed when 4h SMA20 < SMA50 (downtrend)
-    MTF_OK=$(echo "$SMA20_4H < $SMA50_4H" | bc -l 2>/dev/null || echo 0)
-    if [[ "$MTF_OK" != "1" ]]; then
+    # Calculate SMA difference percentage
+    SMA_DIFF_PCT=$(echo "scale=4; ($SMA20_4H - $SMA50_4H) / $SMA50_4H * 100" | bc -l 2>/dev/null || echo 0)
+    # Sell allowed when 4h downtrend (SMA20 < SMA50) OR sideways (diff within threshold)
+    IS_DOWNTREND=$(echo "$SMA20_4H < $SMA50_4H" | bc -l 2>/dev/null || echo 0)
+    IS_SIDEWAYS=$(echo "$SMA_DIFF_PCT >= -$MTF_SIDEWAYS_THRESHOLD && $SMA_DIFF_PCT <= $MTF_SIDEWAYS_THRESHOLD" | bc -l 2>/dev/null || echo 0)
+    if [[ "$IS_DOWNTREND" != "1" && "$IS_SIDEWAYS" != "1" ]]; then
         RULE_SIGNAL="Wait"
         MTF_BLOCKED=true
-        echo "  [MTF Filter] Sell blocked: 4h SMA20=$SMA20_4H > SMA50=$SMA50_4H (uptrend)" >&2
+        echo "  [MTF Filter] Sell blocked: 4h SMA20=$SMA20_4H > SMA50=$SMA50_4H (uptrend, diff=${SMA_DIFF_PCT}%)" >&2
+    elif [[ "$IS_SIDEWAYS" == "1" && "$IS_DOWNTREND" != "1" ]]; then
+        echo "  [MTF Filter] Sell allowed: 4h sideways (diff=${SMA_DIFF_PCT}%)" >&2
     fi
 fi
 

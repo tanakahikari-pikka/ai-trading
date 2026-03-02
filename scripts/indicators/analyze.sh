@@ -218,9 +218,9 @@ EXTREME_VOLATILITY=$(echo "$ATR_RATIO > 3.0" | bc -l 2>/dev/null || echo 0)
 BB_SQUEEZE_THRESHOLD=${BB_SQUEEZE_THRESHOLD:-2.0}
 BB_SQUEEZE=$(echo "$BAND_WIDTH_PCT < $BB_SQUEEZE_THRESHOLD && $ATR_RATIO >= 0.7 && $ATR_RATIO < 1.0" | bc -l 2>/dev/null || echo 0)
 
-# Determine signal (position ALL AND momentum)
-# Buy: RSI + BB both required (2/2) AND momentum (1/1)
-# Sell: RSI + BB both required (2/2) AND momentum (1/1)
+# Determine signal (position ANY + momentum optional)
+# Buy: RSI or BB (1/2) - momentum is optional (adds confidence but not required)
+# Sell: RSI or BB (1/2) - momentum is optional (adds confidence but not required)
 # Note: MTF filter is applied in auto-trade.sh using 4h timeframe data
 SIGNAL="Wait"
 
@@ -234,14 +234,16 @@ elif [[ $EXTREME_VOLATILITY -eq 1 ]]; then
 elif [[ $BB_SQUEEZE -eq 1 ]]; then
     SIGNAL="Wait"
     echo "  [BB Squeeze] Signal blocked: band_width_pct=$BAND_WIDTH_PCT < $BB_SQUEEZE_THRESHOLD (BB squeeze / low directional clarity)" >&2
-elif [[ $BUY_POSITION_COUNT -eq 2 && $BUY_MOMENTUM_COUNT -eq 1 ]]; then
-    # Buy fires only if ALL position conditions (RSI + BB) AND momentum are met
-    # Check conflict: if Sell also fires, don't signal (rare edge case)
-    if [[ $SELL_POSITION_COUNT -ne 2 || $SELL_MOMENTUM_COUNT -ne 1 ]]; then
+elif [[ $BUY_POSITION_COUNT -ge 1 ]]; then
+    # Buy fires if ANY position condition (RSI or BB) is met
+    # Momentum is optional - adds confidence but not required
+    # Check conflict: if Sell also has position conditions met, don't signal
+    if [[ $SELL_POSITION_COUNT -lt 1 ]]; then
         SIGNAL="Buy"
     fi
-elif [[ $SELL_POSITION_COUNT -eq 2 && $SELL_MOMENTUM_COUNT -eq 1 ]]; then
-    # Sell fires only if ALL position conditions (RSI + BB) AND momentum are met
+elif [[ $SELL_POSITION_COUNT -ge 1 ]]; then
+    # Sell fires if ANY position condition (RSI or BB) is met
+    # Momentum is optional - adds confidence but not required
     SIGNAL="Sell"
 fi
 
