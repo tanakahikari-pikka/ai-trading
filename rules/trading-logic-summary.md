@@ -47,27 +47,27 @@ else:
 
 ### カテゴリ分割方式
 
-条件を「位置系」と「勢い系」に分類。各カテゴリから必要数を満たす場合に発火。
+条件を「位置系」と「勢い系」に分類。位置系ANY（1/2）で発火、勢い系はオプショナル。
 
 ### Buy条件
 
-**発火: 位置系ALL AND 勢い系**
+**発火: 位置系ANY（1/2）、勢い系オプショナル**
 
 | カテゴリ | 条件 | 閾値 | 必須 |
 |----------|------|------|:----:|
-| 位置系 | RSI が売られ気味 | RSI < RSI_BUY_THRESHOLD（動的） | ✅ |
-| 位置系 | BB下限付近 | %B < 30 | ✅ |
-| 勢い系 | MACDフレッシュモメンタム | MACD > Signal AND (フレッシュクロス5本以内 OR hist3本連続増加) | ✅ |
+| 位置系 | RSI が売られ気味 | RSI < RSI_BUY_THRESHOLD（動的） | どちらか1つ |
+| 位置系 | BB下限付近 | %B < 30 | どちらか1つ |
+| 勢い系 | MACDフレッシュモメンタム | MACD > Signal AND (フレッシュクロス5本以内 OR hist3本連続増加) | オプション |
 
 ### Sell条件
 
-**発火: 位置系ALL AND 勢い系**
+**発火: 位置系ANY（1/2）、勢い系オプショナル**
 
 | カテゴリ | 条件 | 閾値 | 必須 |
 |----------|------|------|:----:|
-| 位置系 | RSI が買われ気味 | RSI > RSI_SELL_THRESHOLD（動的） | ✅ |
-| 位置系 | BB上限付近 | %B > 70 | ✅ |
-| 勢い系 | MACDフレッシュモメンタム | MACD < Signal AND (フレッシュクロス5本以内 OR hist3本連続減少) | ✅ |
+| 位置系 | RSI が買われ気味 | RSI > RSI_SELL_THRESHOLD（動的） | どちらか1つ |
+| 位置系 | BB上限付近 | %B > 70 | どちらか1つ |
+| 勢い系 | MACDフレッシュモメンタム | MACD < Signal AND (フレッシュクロス5本以内 OR hist3本連続減少) | オプション |
 
 ### %B（ボリンジャーバンド位置）
 
@@ -83,16 +83,18 @@ else:
 ### MTFフィルター（マルチタイムフレーム確認）
 
 **4h足**のトレンドで上位方向を確認し、逆行エントリーをブロックする。
+ただし、**横ばい（SMA差が0.1%以内）の場合は許容**される。
 
 | 方向 | 許可条件（4h足） |
 |------|------------------|
-| Buy | 4h SMA(20) > 4h SMA(50)（上昇トレンド） |
-| Sell | 4h SMA(20) < 4h SMA(50)（下降トレンド） |
+| Buy | 4h SMA(20) > 4h SMA(50)（上昇トレンド）**または横ばい** |
+| Sell | 4h SMA(20) < 4h SMA(50)（下降トレンド）**または横ばい** |
 
 **設計根拠:**
 - 1h足のMACD条件とMTFフィルターが重複していた問題を解消
 - 本来のMTF（上位時間軸確認）の意図を正しく実装
 - 1hでは短期的に買いシグナルが出ても、4hが下降トレンドならブロック
+- **横ばい許容**: 4hが明確なトレンドでない場合は1hシグナルを尊重
 
 ### ATRフィルター（異常ボラ抑制）
 
@@ -117,15 +119,13 @@ elif atr_ratio > 3.0:
 elif band_width_pct < 2.0 AND 0.7 <= atr_ratio < 1.0:
     SIGNAL = "Wait"  # スクイーズ状態 = 方向性不明確
 
-# 位置系ALL + 勢い系の複合条件
-elif BUY_RSI AND BUY_BB AND BUY_MOMENTUM:
-    if SELL_RSI AND SELL_BB AND SELL_MOMENTUM:
-        SIGNAL = "Wait"  # Buy/Sell同時成立 = コンフリクト回避
-    else:
-        SIGNAL = "Buy"  # 全条件到達（MTFフィルターは後段で適用）
+# 位置系ANY（1/2）、勢い系オプショナル
+elif (BUY_RSI OR BUY_BB):  # 位置系どちらか1つでOK
+    if not (SELL_RSI OR SELL_BB):  # Sellの位置系と競合しない
+        SIGNAL = "Buy"  # MTFフィルターは後段で適用
 
-elif SELL_RSI AND SELL_BB AND SELL_MOMENTUM:
-    SIGNAL = "Sell"  # 全条件到達（MTFフィルターは後段で適用）
+elif (SELL_RSI OR SELL_BB):  # 位置系どちらか1つでOK
+    SIGNAL = "Sell"  # MTFフィルターは後段で適用
 
 else:
     SIGNAL = "Wait"
@@ -133,15 +133,18 @@ else:
 
 **Step 2: MTFフィルター（auto-trade.sh）**
 ```
-# 4h足のSMA20 vs SMA50 でフィルター
+# 4h足のSMA20 vs SMA50 でフィルター（横ばい0.1%以内は許容）
+SMA_DIFF_PCT = (4h_SMA20 - 4h_SMA50) / 4h_SMA50 * 100
+IS_SIDEWAYS = |SMA_DIFF_PCT| <= 0.1
+
 if RULE_SIGNAL == "Buy":
-    if 4h_SMA20 > 4h_SMA50:  # 4hが上昇トレンド
+    if 4h_SMA20 > 4h_SMA50 OR IS_SIDEWAYS:  # 上昇トレンドまたは横ばい
         → 通過
     else:
         → Wait（上位トレンドに逆行）
 
 elif RULE_SIGNAL == "Sell":
-    if 4h_SMA20 < 4h_SMA50:  # 4hが下降トレンド
+    if 4h_SMA20 < 4h_SMA50 OR IS_SIDEWAYS:  # 下降トレンドまたは横ばい
         → 通過
     else:
         → Wait（上位トレンドに逆行）
