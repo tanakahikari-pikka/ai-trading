@@ -1,0 +1,92 @@
+name: Auto SL/TP Setter
+
+on:
+  schedule:
+    - cron: '30 * * * *'  # 毎時30分 (UTC) - auto-tradeの30分後
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'ドライラン（実際には設定しない）'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  set-sltp:
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .env
+        run: |
+          echo "SAXO_ACCESS_TOKEN=${{ secrets.SAXO_ACCESS_TOKEN }}" >> .env
+          echo "SAXO_BASE_URL=https://gateway.saxobank.com/sim/openapi" >> .env
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl bc
+
+      - name: Check positions without SL/TP
+        id: check
+        env:
+          SAXO_ACCESS_TOKEN: ${{ secrets.SAXO_ACCESS_TOKEN }}
+          SAXO_BASE_URL: https://gateway.saxobank.com/sim/openapi
+        run: |
+          chmod +x scripts/*.sh scripts/**/*.sh
+
+          # Check status
+          MISSING=$(./scripts/saxo/check-sltp-status.sh 2>/dev/null)
+          COUNT=$(echo "$MISSING" | jq 'length')
+
+          echo "missing_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Found $COUNT positions without SL/TP"
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "$MISSING" | jq -r '.[] | "- \(.symbol) \(.direction) @ \(.openPrice) | SL: \(if .needsSL then "MISSING" else "OK" end) | TP: \(if .needsTP then "MISSING" else "OK" end)"'
+          fi
+
+      - name: Set SL/TP on positions
+        if: steps.check.outputs.missing_count != '0'
+        env:
+          SAXO_ACCESS_TOKEN: ${{ secrets.SAXO_ACCESS_TOKEN }}
+          SAXO_BASE_URL: https://gateway.saxobank.com/sim/openapi
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            ./scripts/auto-sltp.sh --dry-run
+          else
+            ./scripts/auto-sltp.sh
+          fi
+
+      - name: Send Discord notification
+        if: steps.check.outputs.missing_count != '0' && github.event.inputs.dry_run != 'true'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          COUNT=${{ steps.check.outputs.missing_count }}
+
+          curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"SL/TP Auto-Set Complete\",
+                \"description\": \"$COUNT positions updated with ATR-based SL/TP\",
+                \"color\": 3066993,
+                \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+              }]
+            }"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Auto SL/TP Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Positions without SL/TP**: ${{ steps.check.outputs.missing_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dry Run**: ${{ github.event.inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
