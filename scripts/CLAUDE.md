@@ -27,8 +27,11 @@
 | USDJPY | USD/JPY | 米ドル/日本円 |
 | EURUSD | EUR/USD | ユーロ/米ドル |
 | GBPUSD | GBP/USD | 英ポンド/米ドル |
+| GBPJPY | GBP/JPY | 英ポンド/日本円 |
 | EURJPY | EUR/JPY | ユーロ/日本円 |
+| AUDUSD | AUD/USD | 豪ドル/米ドル |
 | XAUUSD | XAU/USD | 金/米ドル (Gold) |
+| XAGUSD | XAG/USD | 銀/米ドル (Silver) |
 
 ## ディレクトリ構成
 

@@ -309,8 +309,14 @@ elif [[ "$RULE_SIGNAL" == "Sell" ]]; then
     ACTION="Sell"
 fi
 
-# Final decision
-FINAL_DECISION=$(determine_decision "$RULE_SIGNAL" "$AI_DECISION")
+# Final decision (pass AI confidence and direction for high-confidence entry)
+FINAL_DECISION=$(determine_decision "$RULE_SIGNAL" "$AI_DECISION" "$AI_CONFIDENCE" "$AI_DIRECTION")
+
+# If AI high-confidence entry (rule=Wait but AI is confident), use AI direction
+if [[ -z "$ACTION" && "$FINAL_DECISION" == "go" && -n "$AI_DIRECTION" ]]; then
+    ACTION="$AI_DIRECTION"
+    echo "  AI high-confidence entry: $AI_DIRECTION (confidence: $AI_CONFIDENCE%)" >&2
+fi
 
 if [[ -n "$ACTION" && "$AI_DECISION" != "go" ]]; then
     echo "  AI override: Rule says $ACTION but AI says not_order" >&2
