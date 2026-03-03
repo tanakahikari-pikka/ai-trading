@@ -1,0 +1,39 @@
+name: Auto Trade (1h)
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # 毎時0分 (UTC)
+  workflow_dispatch:
+    inputs:
+      currency:
+        description: '通貨ペア (空欄で全通貨)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - USDJPY
+          - EURUSD
+          - GBPUSD
+          - GBPJPY
+          - EURJPY
+          - AUDUSD
+          - XAUUSD
+          - XAGUSD
+
+permissions:
+  contents: write
+
+jobs:
+  trade:
+    uses: ./.github/workflows/_trade-job.yml
+    with:
+      currencies: ${{ github.event.inputs.currency != '' && format('["{0}"]', github.event.inputs.currency) || '["USDJPY", "EURUSD", "GBPUSD", "GBPJPY", "EURJPY", "AUDUSD", "XAUUSD", "XAGUSD"]' }}
+      primary_timeframe: '1h'
+      secondary_timeframe: '4h'
+      primary_range: '10d'
+      secondary_range: '30d'
+    secrets:
+      SAXO_ACCESS_TOKEN: ${{ secrets.SAXO_ACCESS_TOKEN }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      DISCORD_ENTRY_WEBHOOK_URL: ${{ secrets.DISCORD_ENTRY_WEBHOOK_URL }}

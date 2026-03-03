@@ -1,24 +1,37 @@
-name: Auto Trade
+name: Trade Job (Reusable)
 
 on:
-  schedule:
-    - cron: '0 * * * *'  # 毎時0分 (UTC)
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      currency:
-        description: '通貨ペア (空欄で全通貨)'
-        required: false
-        type: choice
-        options:
-          - ''
-          - USDJPY
-          - EURUSD
-          - GBPUSD
-          - EURJPY
-          - XAUUSD
-
-permissions:
-  contents: write
+      currencies:
+        description: 'JSON array of currency pairs'
+        required: true
+        type: string
+      primary_timeframe:
+        description: 'Primary timeframe (e.g., 1h, 15m)'
+        required: true
+        type: string
+      secondary_timeframe:
+        description: 'Secondary timeframe for MTF filter (e.g., 4h, 1h)'
+        required: true
+        type: string
+      primary_range:
+        description: 'Data range for primary timeframe (e.g., 10d, 5d)'
+        required: true
+        type: string
+      secondary_range:
+        description: 'Data range for secondary timeframe (e.g., 30d, 10d)'
+        required: true
+        type: string
+    secrets:
+      SAXO_ACCESS_TOKEN:
+        required: true
+      OPENAI_API_KEY:
+        required: true
+      DISCORD_WEBHOOK_URL:
+        required: true
+      DISCORD_ENTRY_WEBHOOK_URL:
+        required: true
 
 jobs:
   trade:
@@ -27,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        currency: ${{ github.event.inputs.currency != '' && fromJSON(format('["{0}"]', github.event.inputs.currency)) || fromJSON('["USDJPY", "EURUSD", "GBPUSD", "EURJPY", "XAUUSD"]') }}
+        currency: ${{ fromJSON(inputs.currencies) }}
 
     steps:
       - name: Checkout
@@ -44,7 +57,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq curl bc
 
-      - name: Run Auto Trade (${{ matrix.currency }})
+      - name: Run Auto Trade (${{ matrix.currency }} @ ${{ inputs.primary_timeframe }})
         id: trade
         env:
           SAXO_ACCESS_TOKEN: ${{ secrets.SAXO_ACCESS_TOKEN }}
@@ -52,6 +65,10 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_ENTRY_WEBHOOK_URL: ${{ secrets.DISCORD_ENTRY_WEBHOOK_URL }}
+          PRIMARY_TIMEFRAME: ${{ inputs.primary_timeframe }}
+          PRIMARY_RANGE: ${{ inputs.primary_range }}
+          SECONDARY_TIMEFRAME: ${{ inputs.secondary_timeframe }}
+          SECONDARY_RANGE: ${{ inputs.secondary_range }}
         run: |
           chmod +x scripts/*.sh scripts/**/*.sh
 
@@ -70,14 +87,14 @@ jobs:
         if: steps.trade.outputs.decision == 'go'
         uses: actions/upload-artifact@v4
         with:
-          name: trade-result-${{ matrix.currency }}
+          name: trade-result-${{ matrix.currency }}-${{ inputs.primary_timeframe }}
           path: /tmp/trade_result.json
           retention-days: 1
 
       - name: Summary
         if: always()
         run: |
-          echo "Auto trade (${{ matrix.currency }}) completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Auto trade (${{ matrix.currency }} @ ${{ inputs.primary_timeframe }}) completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           echo "Decision: ${{ steps.trade.outputs.decision }}"
 
   # Collect and commit logs after all trades complete
