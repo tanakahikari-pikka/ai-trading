@@ -93,11 +93,18 @@ place_order() {
 }
 
 # Determine final decision
-# Usage: determine_decision <rule_signal> <ai_decision>
+# Usage: determine_decision <rule_signal> <ai_decision> <ai_confidence> <ai_action>
 # Returns: "go" or "not_order"
+#
+# Logic:
+# 1. Rule=Buy/Sell + AI=go → go
+# 2. Rule=Wait + AI=go + confidence>=70 → go (AI高確度エントリー)
+# 3. Otherwise → not_order
 determine_decision() {
     local rule_signal="$1"
     local ai_decision="$2"
+    local ai_confidence="${3:-0}"
+    local ai_action="${4:-}"
 
     local action=""
     if [[ "$rule_signal" == "Buy" ]]; then
@@ -106,11 +113,22 @@ determine_decision() {
         action="Sell"
     fi
 
+    # Case 1: Rule signal + AI confirms
     if [[ -n "$action" && "$ai_decision" == "go" ]]; then
         echo "go"
-    else
-        echo "not_order"
+        return
     fi
+
+    # Case 2: AI high-confidence entry (rule=Wait but AI is confident)
+    if [[ "$ai_decision" == "go" && -n "$ai_action" ]]; then
+        local confidence_int=$(printf "%.0f" "$ai_confidence" 2>/dev/null || echo "0")
+        if [[ "$confidence_int" -ge 70 ]]; then
+            echo "go"
+            return
+        fi
+    fi
+
+    echo "not_order"
 }
 
 # Build final result JSON
