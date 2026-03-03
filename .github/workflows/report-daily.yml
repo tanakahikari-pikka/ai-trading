@@ -1,0 +1,48 @@
+name: Daily Trading Report
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # 毎日 00:00 UTC (日本時間 09:00)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Report date (YYYY-MM-DD format, default: yesterday)'
+        required: false
+        type: string
+
+jobs:
+  daily-report:
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .env
+        run: |
+          echo "SAXO_ACCESS_TOKEN=${{ secrets.SAXO_ACCESS_TOKEN }}" >> .env
+          echo "SAXO_BASE_URL=https://gateway.saxobank.com/sim/openapi" >> .env
+          echo "DISCORD_REPORT_WEBHOOK_URL=${{ secrets.DISCORD_REPORT_WEBHOOK_URL }}" >> .env
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl bc
+
+      - name: Generate Daily Report
+        env:
+          SAXO_ACCESS_TOKEN: ${{ secrets.SAXO_ACCESS_TOKEN }}
+          SAXO_BASE_URL: https://gateway.saxobank.com/sim/openapi
+          DISCORD_REPORT_WEBHOOK_URL: ${{ secrets.DISCORD_REPORT_WEBHOOK_URL }}
+          REPORT_DATE: ${{ github.event.inputs.date }}
+        run: |
+          chmod +x scripts/**/*.sh
+
+          echo "Running daily report..."
+          ./scripts/report/daily-report.sh
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Daily report completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
