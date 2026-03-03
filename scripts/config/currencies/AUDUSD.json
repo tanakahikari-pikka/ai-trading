@@ -1,0 +1,37 @@
+{
+  "symbol": "AUDUSD",
+  "yahoo_symbol": "AUDUSD=X",
+  "saxo_uic": 4,
+  "saxo_asset_type": "FxSpot",
+  "display_name": "AUD/USD",
+  "description": "豪ドル/米ドル",
+  "pip_size": 0.0001,
+  "decimal_places": 5,
+  "default_percentage": 10,
+  "max_amount": 10000,
+  "thresholds": {
+    "rsi_overbought": 70,
+    "rsi_oversold": 30,
+    "rsi_buy_threshold": 40,
+    "rsi_sell_threshold": 60,
+    "min_conditions": 2,
+    "fresh_cross_lookback": 5
+  },
+  "timeframes": {
+    "primary": "1h",
+    "primary_range": "10d",
+    "secondary": "1d",
+    "secondary_range": "30d"
+  },
+  "sl_tp": {
+    "enabled": true,
+    "stop_loss": {
+      "mode": "atr",
+      "multiplier": 1.5
+    },
+    "take_profit": {
+      "mode": "ratio",
+      "value": 2.0
+    }
+  }
+}
