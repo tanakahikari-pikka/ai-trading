@@ -38,11 +38,11 @@ load_currency_config() {
     MIN_CONDITIONS=$(jq -r '.thresholds.min_conditions' "$config_file")
     FRESH_CROSS_LOOKBACK=$(jq -r '.thresholds.fresh_cross_lookback // 5' "$config_file")
 
-    # Timeframes
-    PRIMARY_TIMEFRAME=$(jq -r '.timeframes.primary' "$config_file")
-    PRIMARY_RANGE=$(jq -r '.timeframes.primary_range' "$config_file")
-    SECONDARY_TIMEFRAME=$(jq -r '.timeframes.secondary' "$config_file")
-    SECONDARY_RANGE=$(jq -r '.timeframes.secondary_range' "$config_file")
+    # Timeframes (ENV > JSON for workflow override)
+    PRIMARY_TIMEFRAME="${PRIMARY_TIMEFRAME:-$(jq -r '.timeframes.primary' "$config_file")}"
+    PRIMARY_RANGE="${PRIMARY_RANGE:-$(jq -r '.timeframes.primary_range' "$config_file")}"
+    SECONDARY_TIMEFRAME="${SECONDARY_TIMEFRAME:-$(jq -r '.timeframes.secondary' "$config_file")}"
+    SECONDARY_RANGE="${SECONDARY_RANGE:-$(jq -r '.timeframes.secondary_range' "$config_file")}"
 
     # SL/TP settings
     SL_TP_ENABLED=$(jq -r '.sl_tp.enabled // false' "$config_file")
