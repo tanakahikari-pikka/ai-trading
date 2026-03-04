@@ -1,0 +1,89 @@
+name: Validate UIC Mapping
+
+on:
+  schedule:
+    - cron: '50 * * * *'  # 毎時50分 (UTC) - auto-tradeの前に検証
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Validate UIC mappings
+        id: validate
+        env:
+          SAXO_ACCESS_TOKEN: ${{ secrets.SAXO_ACCESS_TOKEN }}
+          SAXO_BASE_URL: https://gateway.saxobank.com/sim/openapi
+        run: |
+          chmod +x scripts/**/*.sh
+
+          RESULT=$(./scripts/saxo/validate-uic-mapping.sh) || true
+          STATUS=$(echo "$RESULT" | jq -r '.status')
+          MISMATCHES=$(echo "$RESULT" | jq -r '.mismatches')
+
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "mismatches=$MISMATCHES" >> $GITHUB_OUTPUT
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESULT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          if [ "$STATUS" = "error" ]; then
+            echo ""
+            echo "::error::UIC mapping mismatch detected! $MISMATCHES currency pair(s) have incorrect UIC."
+            echo ""
+            echo "$RESULT" | jq -r '.results[] | select(.status != "ok") | "::error::[\(.symbol)] config=\(.configuredUic) actual=\(.actualUic // "NOT FOUND") (\(.description))"'
+          fi
+
+      - name: Send Discord alert on mismatch
+        if: steps.validate.outputs.status == 'error'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          MISMATCHES="${{ steps.validate.outputs.mismatches }}"
+          DETAILS=$(echo '${{ steps.validate.outputs.result }}' | jq -r '.results[] | select(.status != "ok") | "- **\(.symbol)**: config=\(.configuredUic), actual=\(.actualUic // "NOT FOUND")"')
+
+          curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg desc "UIC mapping mismatch: $MISMATCHES pair(s)\n$DETAILS" \
+              --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              '{
+                "embeds": [{
+                  "title": "UIC Mapping Error",
+                  "description": $desc,
+                  "color": 15158332,
+                  "timestamp": $ts
+                }]
+              }')"
+
+      - name: Fail on mismatch
+        if: steps.validate.outputs.status == 'error'
+        run: |
+          echo "UIC mapping validation failed with ${{ steps.validate.outputs.mismatches }} mismatch(es)."
+          exit 1
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## UIC Mapping Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ steps.validate.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mismatches**: ${{ steps.validate.outputs.mismatches }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.validate.outputs.result }}' | jq '.' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
