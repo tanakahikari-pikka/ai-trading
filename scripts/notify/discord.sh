@@ -24,6 +24,7 @@ RESULT=$(cat)
 # Extract basic values
 DECISION=$(echo "$RESULT" | jq -r '.decision // "unknown"')
 SYMBOL=$(echo "$RESULT" | jq -r '.symbol // "USDJPY"')
+STRATEGY=$(echo "$RESULT" | jq -r '.strategy // "mean-reversion"')
 ACTION=$(echo "$RESULT" | jq -r '.action // null')
 AMOUNT=$(echo "$RESULT" | jq -r '.amount // null | if . == null then "-" else tostring end')
 
@@ -93,6 +94,7 @@ PAYLOAD=$(jq -n \
     --arg emoji "$EMOJI" \
     --arg decision "$DECISION" \
     --arg symbol "$SYMBOL" \
+    --arg strategy "$STRATEGY" \
     --arg action "${ACTION:-"-"}" \
     --arg amount "$AMOUNT" \
     --arg rsi "$RSI" \
@@ -128,8 +130,8 @@ PAYLOAD=$(jq -n \
                     inline: true
                 },
                 {
-                    name: "⚠️ リスク",
-                    value: $ai_risk,
+                    name: "🧠 戦略",
+                    value: $strategy,
                     inline: true
                 },
                 {
@@ -140,6 +142,11 @@ PAYLOAD=$(jq -n \
                 {
                     name: "📉 トレンド",
                     value: "1h: \($trend_1h)\n4h: \($trend_4h)\nボラ: \($volatility)",
+                    inline: true
+                },
+                {
+                    name: "⚠️ リスク",
+                    value: $ai_risk,
                     inline: true
                 },
                 {

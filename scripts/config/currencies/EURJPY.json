@@ -1,5 +1,6 @@
 {
   "symbol": "EURJPY",
+  "strategy": "mean-reversion",
   "yahoo_symbol": "EURJPY=X",
   "saxo_uic": 18,
   "saxo_asset_type": "FxSpot",

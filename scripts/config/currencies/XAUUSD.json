@@ -1,5 +1,6 @@
 {
   "symbol": "XAUUSD",
+  "strategy": "mean-reversion",
   "yahoo_symbol": "GC=F",
   "saxo_uic": 8176,
   "saxo_asset_type": "FxSpot",

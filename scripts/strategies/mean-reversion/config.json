@@ -1,0 +1,44 @@
+{
+  "name": "mean-reversion",
+  "display_name": "Mean Reversion",
+  "description": "平均回帰型戦略: RSI/BBで過買い・過売りを検出し、価格の平均回帰を狙う",
+  "version": "1.0.0",
+  "indicators": ["rsi", "sma", "ema", "macd", "bollinger", "atr"],
+  "signals": {
+    "buy": {
+      "description": "RSI oversold + BB lower band proximity",
+      "position_conditions": ["rsi_oversold", "near_bb_lower"],
+      "momentum_conditions": ["macd_bullish", "fresh_cross", "histogram_increasing"]
+    },
+    "sell": {
+      "description": "RSI overbought + BB upper band proximity",
+      "position_conditions": ["rsi_overbought", "near_bb_upper"],
+      "momentum_conditions": ["macd_bearish", "fresh_cross", "histogram_decreasing"]
+    }
+  },
+  "filters": {
+    "atr_filter": {
+      "enabled": true,
+      "low_threshold": 0.7,
+      "high_threshold": 3.0
+    },
+    "bb_squeeze_filter": {
+      "enabled": true,
+      "threshold": 2.0
+    },
+    "mtf_filter": {
+      "enabled": true,
+      "description": "Applied in auto-trade.sh using secondary timeframe"
+    }
+  },
+  "best_for": [
+    "Range-bound markets",
+    "Markets with clear support/resistance levels",
+    "Low to moderate volatility environments"
+  ],
+  "avoid_in": [
+    "Strong trending markets",
+    "High volatility/news events",
+    "Low liquidity periods"
+  ]
+}

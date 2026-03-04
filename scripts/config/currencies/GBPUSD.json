@@ -1,5 +1,6 @@
 {
   "symbol": "GBPUSD",
+  "strategy": "mean-reversion",
   "yahoo_symbol": "GBPUSD=X",
   "saxo_uic": 31,
   "saxo_asset_type": "FxSpot",

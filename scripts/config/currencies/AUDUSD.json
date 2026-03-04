@@ -1,5 +1,6 @@
 {
   "symbol": "AUDUSD",
+  "strategy": "mean-reversion",
   "yahoo_symbol": "AUDUSD=X",
   "saxo_uic": 4,
   "saxo_asset_type": "FxSpot",
