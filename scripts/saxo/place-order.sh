@@ -1,6 +1,6 @@
 #!/bin/bash
-# Place an order on Saxo Bank API with optional SL/TP
-# Usage: place-order.sh <account_key> <uic> <buy_sell> <amount> <order_type> [order_price] [asset_type] [sl_price] [tp_price]
+# Place a Market order on Saxo Bank API with optional SL/TP
+# Usage: place-order.sh <account_key> <uic> <buy_sell> <amount> [asset_type] [sl_price] [tp_price]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/auth.sh"
@@ -9,22 +9,18 @@ ACCOUNT_KEY="$1"
 UIC="$2"
 BUY_SELL="$3"
 AMOUNT="$4"
-ORDER_TYPE="$5"
-ORDER_PRICE="$6"
-ASSET_TYPE="${7:-FxSpot}"
-SL_PRICE="$8"
-TP_PRICE="$9"
+ASSET_TYPE="${5:-FxSpot}"
+SL_PRICE="$6"
+TP_PRICE="$7"
 
-if [[ -z "$ACCOUNT_KEY" || -z "$UIC" || -z "$BUY_SELL" || -z "$AMOUNT" || -z "$ORDER_TYPE" ]]; then
-    echo "Usage: $0 <account_key> <uic> <buy_sell> <amount> <order_type> [order_price] [asset_type] [sl_price] [tp_price]" >&2
+if [[ -z "$ACCOUNT_KEY" || -z "$UIC" || -z "$BUY_SELL" || -z "$AMOUNT" ]]; then
+    echo "Usage: $0 <account_key> <uic> <buy_sell> <amount> [asset_type] [sl_price] [tp_price]" >&2
     echo "" >&2
     echo "Arguments:" >&2
     echo "  account_key - AccountKey from get-accounts.sh" >&2
     echo "  uic         - Universal Instrument Code" >&2
     echo "  buy_sell    - 'Buy' or 'Sell'" >&2
     echo "  amount      - Order amount" >&2
-    echo "  order_type  - 'Market' or 'Limit'" >&2
-    echo "  order_price - Price (required for Limit orders)" >&2
     echo "  asset_type  - Asset type (default: FxSpot)" >&2
     echo "  sl_price    - Stop Loss price (optional)" >&2
     echo "  tp_price    - Take Profit price (optional)" >&2
@@ -34,18 +30,6 @@ fi
 # Validate buy_sell
 if [[ "$BUY_SELL" != "Buy" && "$BUY_SELL" != "Sell" ]]; then
     echo "Error: buy_sell must be 'Buy' or 'Sell'" >&2
-    exit 1
-fi
-
-# Validate order_type
-if [[ "$ORDER_TYPE" != "Market" && "$ORDER_TYPE" != "Limit" ]]; then
-    echo "Error: order_type must be 'Market' or 'Limit'" >&2
-    exit 1
-fi
-
-# Require price for Limit orders
-if [[ "$ORDER_TYPE" == "Limit" && -z "$ORDER_PRICE" ]]; then
-    echo "Error: order_price is required for Limit orders" >&2
     exit 1
 fi
 
@@ -99,59 +83,35 @@ build_related_orders() {
     echo "$orders"
 }
 
-# Build order JSON
-if [[ "$ORDER_TYPE" == "Market" ]]; then
-    # Check if SL/TP should be added
-    if [[ -n "$SL_PRICE" || -n "$TP_PRICE" ]]; then
-        RELATED_ORDERS=$(build_related_orders "$SL_PRICE" "$TP_PRICE" "$CLOSE_DIRECTION")
-        ORDER_JSON=$(jq -n \
-            --arg accountKey "$ACCOUNT_KEY" \
-            --argjson uic "$UIC" \
-            --arg buySell "$BUY_SELL" \
-            --argjson amount "$AMOUNT" \
-            --arg assetType "$ASSET_TYPE" \
-            --argjson orders "$RELATED_ORDERS" \
-            '{
-                AccountKey: $accountKey,
-                Uic: $uic,
-                BuySell: $buySell,
-                Amount: $amount,
-                AssetType: $assetType,
-                OrderType: "Market",
-                ManualOrder: true,
-                OrderDuration: {
-                    DurationType: "DayOrder"
-                },
-                Orders: $orders
-            }')
-    else
-        ORDER_JSON=$(jq -n \
-            --arg accountKey "$ACCOUNT_KEY" \
-            --argjson uic "$UIC" \
-            --arg buySell "$BUY_SELL" \
-            --argjson amount "$AMOUNT" \
-            --arg assetType "$ASSET_TYPE" \
-            '{
-                AccountKey: $accountKey,
-                Uic: $uic,
-                BuySell: $buySell,
-                Amount: $amount,
-                AssetType: $assetType,
-                OrderType: "Market",
-                OrderRelation: "StandAlone",
-                ManualOrder: true,
-                OrderDuration: {
-                    DurationType: "DayOrder"
-                }
-            }')
-    fi
+# Build order JSON (Market order only)
+if [[ -n "$SL_PRICE" || -n "$TP_PRICE" ]]; then
+    RELATED_ORDERS=$(build_related_orders "$SL_PRICE" "$TP_PRICE" "$CLOSE_DIRECTION")
+    ORDER_JSON=$(jq -n \
+        --arg accountKey "$ACCOUNT_KEY" \
+        --argjson uic "$UIC" \
+        --arg buySell "$BUY_SELL" \
+        --argjson amount "$AMOUNT" \
+        --arg assetType "$ASSET_TYPE" \
+        --argjson orders "$RELATED_ORDERS" \
+        '{
+            AccountKey: $accountKey,
+            Uic: $uic,
+            BuySell: $buySell,
+            Amount: $amount,
+            AssetType: $assetType,
+            OrderType: "Market",
+            ManualOrder: true,
+            OrderDuration: {
+                DurationType: "DayOrder"
+            },
+            Orders: $orders
+        }')
 else
     ORDER_JSON=$(jq -n \
         --arg accountKey "$ACCOUNT_KEY" \
         --argjson uic "$UIC" \
         --arg buySell "$BUY_SELL" \
         --argjson amount "$AMOUNT" \
-        --argjson orderPrice "$ORDER_PRICE" \
         --arg assetType "$ASSET_TYPE" \
         '{
             AccountKey: $accountKey,
@@ -159,12 +119,11 @@ else
             BuySell: $buySell,
             Amount: $amount,
             AssetType: $assetType,
-            OrderType: "Limit",
-            OrderPrice: $orderPrice,
+            OrderType: "Market",
             OrderRelation: "StandAlone",
             ManualOrder: true,
             OrderDuration: {
-                DurationType: "GoodTillCancel"
+                DurationType: "DayOrder"
             }
         }')
 fi

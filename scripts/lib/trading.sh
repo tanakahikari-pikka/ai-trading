@@ -89,7 +89,7 @@ place_order() {
     local sl_price="${6:-}"
     local tp_price="${7:-}"
 
-    "$SCRIPTS_ROOT/saxo/place-order.sh" "$account_key" "$uic" "$action" "$amount" Market "" "$asset_type" "$sl_price" "$tp_price" 2>&1
+    "$SCRIPTS_ROOT/saxo/place-order.sh" "$account_key" "$uic" "$action" "$amount" "$asset_type" "$sl_price" "$tp_price" 2>&1
 }
 
 # Determine final decision

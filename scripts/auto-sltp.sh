@@ -7,8 +7,8 @@ set -eo pipefail
 #   - Stop Loss: ATR × 1.5 from entry price
 #   - Take Profit: SL distance × 2.0 (Risk:Reward = 1:2)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+AUTO_SLTP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$AUTO_SLTP_DIR/.." && pwd)"
 
 DRY_RUN=false
 if [[ "$1" == "--dry-run" ]]; then
@@ -17,7 +17,7 @@ if [[ "$1" == "--dry-run" ]]; then
 fi
 
 # Load environment
-source "$SCRIPT_DIR/saxo/auth.sh"
+source "$AUTO_SLTP_DIR/saxo/auth.sh"
 
 # Symbol to Yahoo Finance symbol mapping
 get_yahoo_symbol() {
@@ -51,14 +51,14 @@ get_decimal_places() {
 calculate_atr() {
     local yahoo_symbol="$1"
 
-    PRICE_DATA=$("$SCRIPT_DIR/yahoo-finance/get-chart.sh" "$yahoo_symbol" "1h" "10d" 2>&1) || true
+    PRICE_DATA=$("$AUTO_SLTP_DIR/yahoo-finance/get-chart.sh" "$yahoo_symbol" "1h" "10d") || true
     if [[ -z "$PRICE_DATA" ]]; then
         echo "ERROR: get-chart.sh returned empty for $yahoo_symbol" >&2
         echo "null"
         return 1
     fi
 
-    ATR_DATA=$(echo "$PRICE_DATA" | "$SCRIPT_DIR/indicators/atr.sh" 14 2>&1) || true
+    ATR_DATA=$(echo "$PRICE_DATA" | "$AUTO_SLTP_DIR/indicators/atr.sh" 14) || true
     if [[ -z "$ATR_DATA" ]]; then
         echo "ERROR: atr.sh returned empty for $yahoo_symbol" >&2
         echo "null"
@@ -68,7 +68,8 @@ calculate_atr() {
     echo "$ATR_DATA" | jq -r '.atr'
 }
 
-# Set SL/TP for a position
+# Set SL/TP for a position using PositionId + Orders array (FifoEndOfDay mode)
+# This links orders to the position - they auto-cancel when position closes
 set_sltp() {
     local position_id="$1"
     local account_key="$2"
@@ -82,7 +83,7 @@ set_sltp() {
     local needs_sl="${10}"
     local needs_tp="${11}"
 
-    # Determine direction
+    # Determine close direction (opposite of position)
     local close_direction
     if (( $(echo "$amount > 0" | bc -l) )); then
         close_direction="Sell"
@@ -91,87 +92,73 @@ set_sltp() {
     fi
 
     local amount_abs=$(echo "$amount" | tr -d '-')
-    local sl_ok=true
-    local tp_ok=true
 
-    # Set Stop Loss
+    # Build Orders array
+    local orders="[]"
+
     if [[ "$needs_sl" == "true" ]]; then
         echo "  Setting SL @ $sl_price" >&2
-
-        if [[ "$DRY_RUN" == "false" ]]; then
-            SL_RESPONSE=$(curl -s -X POST "$SAXO_BASE_URL/trade/v2/orders" \
-                -H "Authorization: Bearer $SAXO_ACCESS_TOKEN" \
-                -H "Content-Type: application/json" \
-                -d "$(jq -n \
-                    --arg accountKey "$account_key" \
-                    --argjson uic "$uic" \
-                    --arg buySell "$close_direction" \
-                    --argjson amount "$amount_abs" \
-                    --argjson orderPrice "$sl_price" \
-                    --arg assetType "$asset_type" \
-                    --arg positionId "$position_id" \
-                    '{
-                        AccountKey: $accountKey,
-                        Uic: $uic,
-                        BuySell: $buySell,
-                        Amount: $amount,
-                        AssetType: $assetType,
-                        OrderType: "Stop",
-                        OrderPrice: $orderPrice,
-                        ManualOrder: true,
-                        OrderDuration: { DurationType: "GoodTillCancel" },
-                        RelatedPositionId: $positionId
-                    }')")
-
-            if echo "$SL_RESPONSE" | jq -e '.OrderId' > /dev/null 2>&1; then
-                echo "  SL set: OrderId $(echo "$SL_RESPONSE" | jq -r '.OrderId')" >&2
-            else
-                echo "  SL FAILED: $(echo "$SL_RESPONSE" | jq -r '.ErrorInfo.Message // .Message // "Unknown error"')" >&2
-                sl_ok=false
-            fi
-        fi
+        orders=$(echo "$orders" | jq \
+            --arg buySell "$close_direction" \
+            --argjson uic "$uic" \
+            --argjson amount "$amount_abs" \
+            --argjson orderPrice "$sl_price" \
+            --arg assetType "$asset_type" \
+            '. + [{
+                Uic: $uic,
+                BuySell: $buySell,
+                Amount: $amount,
+                AssetType: $assetType,
+                OrderType: "Stop",
+                OrderPrice: $orderPrice,
+                ManualOrder: true,
+                OrderDuration: { DurationType: "GoodTillCancel" }
+            }]')
     fi
 
-    # Set Take Profit
     if [[ "$needs_tp" == "true" ]]; then
         echo "  Setting TP @ $tp_price" >&2
-
-        if [[ "$DRY_RUN" == "false" ]]; then
-            TP_RESPONSE=$(curl -s -X POST "$SAXO_BASE_URL/trade/v2/orders" \
-                -H "Authorization: Bearer $SAXO_ACCESS_TOKEN" \
-                -H "Content-Type: application/json" \
-                -d "$(jq -n \
-                    --arg accountKey "$account_key" \
-                    --argjson uic "$uic" \
-                    --arg buySell "$close_direction" \
-                    --argjson amount "$amount_abs" \
-                    --argjson orderPrice "$tp_price" \
-                    --arg assetType "$asset_type" \
-                    --arg positionId "$position_id" \
-                    '{
-                        AccountKey: $accountKey,
-                        Uic: $uic,
-                        BuySell: $buySell,
-                        Amount: $amount,
-                        AssetType: $assetType,
-                        OrderType: "Limit",
-                        OrderPrice: $orderPrice,
-                        ManualOrder: true,
-                        OrderDuration: { DurationType: "GoodTillCancel" },
-                        RelatedPositionId: $positionId
-                    }')")
-
-            if echo "$TP_RESPONSE" | jq -e '.OrderId' > /dev/null 2>&1; then
-                echo "  TP set: OrderId $(echo "$TP_RESPONSE" | jq -r '.OrderId')" >&2
-            else
-                echo "  TP FAILED: $(echo "$TP_RESPONSE" | jq -r '.ErrorInfo.Message // .Message // "Unknown error"')" >&2
-                tp_ok=false
-            fi
-        fi
+        orders=$(echo "$orders" | jq \
+            --arg buySell "$close_direction" \
+            --argjson uic "$uic" \
+            --argjson amount "$amount_abs" \
+            --argjson orderPrice "$tp_price" \
+            --arg assetType "$asset_type" \
+            '. + [{
+                Uic: $uic,
+                BuySell: $buySell,
+                Amount: $amount,
+                AssetType: $assetType,
+                OrderType: "Limit",
+                OrderPrice: $orderPrice,
+                ManualOrder: true,
+                OrderDuration: { DurationType: "GoodTillCancel" }
+            }]')
     fi
 
-    if [[ "$sl_ok" == "false" || "$tp_ok" == "false" ]]; then
-        return 1
+    if [[ "$DRY_RUN" == "false" ]]; then
+        # Use PositionId + Orders array to link orders to position
+        RESPONSE=$(curl -s -X POST "$SAXO_BASE_URL/trade/v2/orders" \
+            -H "Authorization: Bearer $SAXO_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+                --arg positionId "$position_id" \
+                --argjson orders "$orders" \
+                '{
+                    PositionId: $positionId,
+                    Orders: $orders
+                }')")
+
+        # Check response
+        if echo "$RESPONSE" | jq -e '.Orders[0].OrderId' > /dev/null 2>&1; then
+            local order_ids=$(echo "$RESPONSE" | jq -r '.Orders[].OrderId' | tr '\n' ', ' | sed 's/,$//')
+            echo "  Linked to position: OrderIds [$order_ids]" >&2
+        else
+            # Extract error message
+            local error_msg=$(echo "$RESPONSE" | jq -r '.Orders[0].ErrorInfo.Message // .Message // .ErrorInfo.Message // "Unknown error"')
+            echo "  FAILED: $error_msg" >&2
+            return 1
+        fi
     fi
 }
 
@@ -182,7 +169,7 @@ echo "" >&2
 
 # Check positions without SL/TP
 CHECK_STDERR=$(mktemp)
-MISSING=$("$SCRIPT_DIR/saxo/check-sltp-status.sh" 2>"$CHECK_STDERR") || true
+MISSING=$("$AUTO_SLTP_DIR/saxo/check-sltp-status.sh" 2>"$CHECK_STDERR") || true
 CHECK_EXIT=$?
 if [[ $CHECK_EXIT -ne 0 ]]; then
     echo "FATAL: check-sltp-status.sh failed with exit code $CHECK_EXIT" >&2
