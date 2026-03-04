@@ -54,12 +54,16 @@ load_currency_config() {
     # Trading limits
     MAX_AMOUNT=$(jq -r '.max_amount // 10000' "$config_file")
 
+    # Strategy (default: mean-reversion for backward compatibility)
+    STRATEGY=$(jq -r '.strategy // "mean-reversion"' "$config_file")
+
     # Export for subshells
     export SYMBOL YAHOO_SYMBOL SAXO_UIC SAXO_ASSET_TYPE DISPLAY_NAME DESCRIPTION
     export PIP_SIZE DECIMAL_PLACES DEFAULT_PERCENTAGE MAX_AMOUNT
     export RSI_OVERBOUGHT RSI_OVERSOLD RSI_BUY_THRESHOLD RSI_SELL_THRESHOLD MIN_CONDITIONS FRESH_CROSS_LOOKBACK
     export PRIMARY_TIMEFRAME PRIMARY_RANGE SECONDARY_TIMEFRAME SECONDARY_RANGE
     export SL_TP_ENABLED SL_MODE SL_MULTIPLIER TP_MODE TP_VALUE
+    export STRATEGY
 
     return 0
 }
@@ -93,4 +97,35 @@ validate_currency() {
     local symbol="$1"
     local config_file="$CONFIG_DIR/${symbol}.json"
     [[ -f "$config_file" ]]
+}
+
+# Get strategy analyze script path
+# Usage: get_strategy_analyze_script <strategy_name>
+# Returns: path to analyze.sh, or empty if not found
+get_strategy_analyze_script() {
+    local strategy="${1:-mean-reversion}"
+    local strategy_dir="$LIB_DIR/../strategies/$strategy"
+    local script="$strategy_dir/analyze.sh"
+
+    if [[ -f "$script" ]]; then
+        echo "$script"
+        return 0
+    fi
+
+    # Fallback to indicators/analyze.sh for backward compatibility
+    local fallback="$LIB_DIR/../indicators/analyze.sh"
+    if [[ -f "$fallback" ]]; then
+        echo "$fallback"
+        return 0
+    fi
+
+    return 1
+}
+
+# Validate strategy exists
+# Usage: validate_strategy <strategy_name>
+validate_strategy() {
+    local strategy="$1"
+    local strategy_dir="$LIB_DIR/../strategies/$strategy"
+    [[ -d "$strategy_dir" && -f "$strategy_dir/analyze.sh" ]]
 }

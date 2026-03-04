@@ -67,8 +67,15 @@ if [[ "$DRY_RUN" == "true" ]]; then
     echo "=== DRY RUN MODE ===" >&2
 fi
 
+# Validate strategy exists
+if ! validate_strategy "$STRATEGY"; then
+    echo "Warning: Strategy '$STRATEGY' not found, using default 'mean-reversion'" >&2
+    STRATEGY="mean-reversion"
+fi
+
 echo "========================================" >&2
 echo "Auto Trade: $DISPLAY_NAME ($DESCRIPTION)" >&2
+echo "Strategy: $STRATEGY" >&2
 echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >&2
 echo "========================================" >&2
 
@@ -92,17 +99,18 @@ if [[ -z "$CHART_DATA_4H" ]]; then
 fi
 echo "  $SECONDARY_TIMEFRAME data: OK" >&2
 
-# Step 2: Technical Analysis (All indicators)
+# Step 2: Technical Analysis (Strategy-based)
 echo "" >&2
 echo "[Step 2] Running technical analysis..." >&2
+echo "  Strategy: $STRATEGY" >&2
 
 # Analyze primary timeframe
-echo "  Analyzing $PRIMARY_TIMEFRAME timeframe..." >&2
-ANALYSIS_1H=$(echo "$CHART_DATA_1H" | run_technical_analysis)
+echo "  Analyzing $PRIMARY_TIMEFRAME timeframe ($STRATEGY)..." >&2
+ANALYSIS_1H=$(echo "$CHART_DATA_1H" | run_technical_analysis "$STRATEGY")
 
 # Analyze secondary timeframe
-echo "  Analyzing $SECONDARY_TIMEFRAME timeframe..." >&2
-ANALYSIS_4H=$(echo "$CHART_DATA_4H" | run_technical_analysis)
+echo "  Analyzing $SECONDARY_TIMEFRAME timeframe ($STRATEGY)..." >&2
+ANALYSIS_4H=$(echo "$CHART_DATA_4H" | run_technical_analysis "$STRATEGY")
 
 # Extract key values from 1h analysis
 RSI=$(extract_rsi "$ANALYSIS_1H")
@@ -449,6 +457,7 @@ FINAL_RESULT=$(jq -n \
     --arg decision "$FINAL_DECISION" \
     --arg symbol "$SYMBOL" \
     --arg display_name "$DISPLAY_NAME" \
+    --arg strategy "$STRATEGY" \
     --arg action "$ACTION" \
     --argjson amount "$TRADE_AMOUNT" \
     --argjson rsi "$RSI" \
@@ -475,6 +484,7 @@ FINAL_RESULT=$(jq -n \
         decision: $decision,
         symbol: $symbol,
         display_name: $display_name,
+        strategy: $strategy,
         action: (if $action == "" then null else $action end),
         amount: (if $decision == "go" then $amount else null end),
         analysis: {

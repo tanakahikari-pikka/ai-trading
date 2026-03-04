@@ -1,5 +1,6 @@
 {
   "symbol": "XAGUSD",
+  "strategy": "mean-reversion",
   "yahoo_symbol": "SI=F",
   "saxo_uic": 8177,
   "saxo_asset_type": "FxSpot",

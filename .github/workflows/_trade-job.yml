@@ -130,7 +130,7 @@ jobs:
 
           # Create CSV header if needed
           if [ ! -f "$CSV_FILE" ]; then
-            echo "timestamp,symbol,action,amount,entry_price,sl,tp,rsi,ai_confidence,trend_1h,trend_4h,ai_summary" > "$CSV_FILE"
+            echo "timestamp,symbol,strategy,action,amount,entry_price,sl,tp,rsi,ai_confidence,trend_1h,trend_4h,ai_summary" > "$CSV_FILE"
           fi
 
           # Create MD header if needed
@@ -150,7 +150,7 @@ jobs:
 
               # Append to CSV
               echo "$RESULT" | jq -r --arg ts "$TIMESTAMP" '
-                [$ts, .symbol, .action, (.amount | tostring),
+                [$ts, .symbol, (.strategy // "mean-reversion"), .action, (.amount | tostring),
                  (if .action == "Buy" then .price.ask else .price.bid end | tostring),
                  (.sl_tp.stop_loss // "N/A" | tostring),
                  (.sl_tp.take_profit // "N/A" | tostring),
@@ -161,6 +161,7 @@ jobs:
               ' >> "$CSV_FILE"
 
               # Append to MD
+              STRATEGY=$(echo "$RESULT" | jq -r '.strategy // "mean-reversion"')
               AMOUNT=$(echo "$RESULT" | jq -r '.amount')
               ENTRY_PRICE=$(echo "$RESULT" | jq -r 'if .action == "Buy" then .price.ask else .price.bid end')
               SL=$(echo "$RESULT" | jq -r '.sl_tp.stop_loss // "N/A"')
@@ -179,6 +180,7 @@ jobs:
                 echo "| Item | Value |"
                 echo "|------|-------|"
                 echo "| Symbol | ${SYMBOL} |"
+                echo "| Strategy | ${STRATEGY} |"
                 echo "| Action | ${ACTION} |"
                 echo "| Amount | ${AMOUNT} |"
                 echo "| Entry Price | ${ENTRY_PRICE} |"

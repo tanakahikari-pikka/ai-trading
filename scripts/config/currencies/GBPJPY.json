@@ -1,5 +1,6 @@
 {
   "symbol": "GBPJPY",
+  "strategy": "mean-reversion",
   "yahoo_symbol": "GBPJPY=X",
   "saxo_uic": 26,
   "saxo_asset_type": "FxSpot",

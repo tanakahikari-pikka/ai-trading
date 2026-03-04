@@ -16,9 +16,19 @@ fetch_price_data() {
 }
 
 # Run technical analysis on price data
-# Usage: echo "$PRICE_DATA" | run_technical_analysis
+# Usage: echo "$PRICE_DATA" | run_technical_analysis [strategy]
+# If strategy is not provided, uses $STRATEGY variable or defaults to mean-reversion
 run_technical_analysis() {
-    "$SCRIPTS_ROOT/indicators/analyze.sh" 2>/dev/null
+    local strategy="${1:-${STRATEGY:-mean-reversion}}"
+    local strategy_script="$SCRIPTS_ROOT/strategies/$strategy/analyze.sh"
+
+    # Use strategy-specific script if available
+    if [[ -f "$strategy_script" ]]; then
+        "$strategy_script" 2>/dev/null
+    else
+        # Fallback to legacy indicators/analyze.sh
+        "$SCRIPTS_ROOT/indicators/analyze.sh" 2>/dev/null
+    fi
 }
 
 # Run AI analysis
