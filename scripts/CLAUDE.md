@@ -40,10 +40,48 @@
 | `ai/` | AI分析（OpenAI API で教育的フィードバック付き判断） |
 | `config/currencies/` | 通貨ペア設定ファイル（JSON） |
 | `indicators/` | テクニカル指標計算（RSI, SMA, EMA, MACD, ボリンジャー, ATR） |
+| `strategies/` | 戦略別分析ロジック（mean-reversion, trend-following, breakout等） |
 | `lib/` | 共通ライブラリ（config, analysis, trading） |
 | `notify/` | 通知（Discord Webhook） |
 | `saxo/` | Saxo Bank API クライアント（認証・価格・発注） |
 | `yahoo-finance/` | 価格履歴取得（OHLC データ） |
+
+## 戦略管理システム
+
+### 利用可能な戦略
+
+| 戦略名 | 説明 | 状態 |
+|--------|------|------|
+| `mean-reversion` | 平均回帰型: RSI/BBで過買い・過売りを検出 | 実装済み |
+| `trend-following` | トレンドフォロー型: トレンド方向に沿った取引 | 設計中 |
+| `breakout` | ブレイクアウト型: サポート/レジスタンスの突破を狙う | 設計中 |
+
+### 戦略の指定方法
+
+通貨設定ファイルで `strategy` フィールドを指定:
+
+```json
+{
+  "symbol": "USDJPY",
+  "strategy": "mean-reversion",
+  ...
+}
+```
+
+### 戦略追加方法
+
+1. `strategies/<strategy-name>/` ディレクトリを作成
+2. `analyze.sh` スクリプトを実装（インターフェースは `base/strategy.sh` 参照）
+3. `config.json` で戦略メタデータを定義
+4. `rules/strategies/<strategy-name>.md` でドキュメント作成
+
+### 同一通貨で複数戦略を並行実行する場合
+
+通貨設定を複製:
+```
+config/currencies/USDJPY-MR.json  # Mean Reversion
+config/currencies/USDJPY-TF.json  # Trend Following
+```
 
 ## メインスクリプト
 
@@ -52,9 +90,9 @@
 ### 処理フロー
 
 ```
-1. config/currencies/ → 通貨設定読み込み
+1. config/currencies/ → 通貨設定読み込み（strategy フィールド含む）
 2. yahoo-finance → 価格履歴（1h + 1d マルチタイムフレーム）
-3. indicators/analyze.sh → 全指標一括計算 + ルールベース判断
+3. strategies/<strategy>/analyze.sh → 戦略別分析 + ルールベース判断
 4. saxo → リアルタイム価格・残高
 5. ai/analyze-trade.sh → AI分析（教育的フィードバック付き）
 6. 最終判断（ルールベース + AI確認）
@@ -178,6 +216,7 @@ AI がチャートを分析し、最適な SL/TP を提案：
 ```json
 {
   "symbol": "GBPJPY",
+  "strategy": "mean-reversion",
   "yahoo_symbol": "GBPJPY=X",
   "saxo_uic": 99,
   "saxo_asset_type": "FxSpot",
@@ -211,3 +250,7 @@ AI がチャートを分析し、最適な SL/TP を提案：
 
 - `../rules/trading-rules.md` - 運用ルール詳細
 - `../rules/ai-response-spec.md` - AIレスポンス仕様（教育的フィードバック）
+- `../rules/strategies/` - 戦略別ドキュメント
+  - `mean-reversion.md` - 平均回帰型戦略
+  - `trend-following.md` - トレンドフォロー型戦略（設計中）
+  - `breakout.md` - ブレイクアウト型戦略（設計中）
