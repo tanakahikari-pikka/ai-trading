@@ -51,20 +51,22 @@
 
 ## Configuration
 
-通貨設定で `"strategy": "mean-reversion"` を指定:
+`config/assignments.json` で通貨→戦略マッピングを指定:
 
 ```json
 {
-  "symbol": "USDJPY",
-  "strategy": "mean-reversion",
-  ...
+  "USDJPY": ["mean-reversion"],
+  "EURUSD": ["mean-reversion"]
 }
 ```
+
+戦略パラメータは `config/strategies/mean-reversion/defaults.json` で設定。
 
 ## Files
 
 - `scripts/strategies/mean-reversion/analyze.sh` - 分析スクリプト
-- `scripts/strategies/mean-reversion/config.json` - 戦略設定
+- `scripts/config/strategies/mean-reversion/defaults.json` - デフォルト設定
+- `scripts/config/strategies/mean-reversion/overrides/` - 通貨別オーバーライド
 
 ## Related Documents
 

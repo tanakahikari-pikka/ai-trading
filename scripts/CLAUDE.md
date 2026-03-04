@@ -39,7 +39,9 @@
 | ディレクトリ | 責務 |
 |--------------|------|
 | `ai/` | AI分析（詳細: `rules/ai-response-spec.md`） |
-| `config/currencies/` | 通貨ペア設定ファイル（JSON） |
+| `config/currencies/` | 通貨ペア固有データ（symbol, saxo_uic, pip_size等） |
+| `config/strategies/` | 戦略設定（thresholds, timeframes, sl_tp等） |
+| `config/assignments.json` | 通貨→戦略マッピング |
 | `indicators/` | テクニカル指標計算（RSI, SMA, EMA, MACD, ボリンジャー, ATR） |
 | `strategies/` | 戦略別分析ロジック（mean-reversion, trend-following, breakout等） |
 | `lib/` | 共通ライブラリ（config, analysis, trading） |
@@ -57,31 +59,65 @@
 | `trend-following` | トレンドフォロー型: トレンド方向に沿った取引 | 設計中 | `rules/strategies/trend-following.md` |
 | `breakout` | ブレイクアウト型: サポート/レジスタンスの突破を狙う | 設計中 | `rules/strategies/breakout.md` |
 
+### 設定構造
+
+通貨データと戦略データは分離して管理:
+
+```
+config/
+├── currencies/              # 通貨固有データのみ
+│   ├── USDJPY.json          # symbol, saxo_uic, pip_size 等
+│   └── ...
+├── strategies/              # 戦略設定
+│   ├── mean-reversion/
+│   │   ├── defaults.json    # デフォルト設定（thresholds, timeframes, sl_tp）
+│   │   └── overrides/       # 通貨別オーバーライド（任意）
+│   │       └── XAUUSD.json  # 貴金属用カスタム設定など
+│   └── trend-following/     # 将来の戦略
+│       └── ...
+└── assignments.json         # 通貨→戦略マッピング
+```
+
 ### 戦略の指定方法
 
-通貨設定ファイルで `strategy` フィールドを指定:
+`config/assignments.json` で通貨→戦略マッピングを管理:
 
 ```json
 {
-  "symbol": "USDJPY",
-  "strategy": "mean-reversion",
-  ...
+  "USDJPY": ["mean-reversion"],
+  "EURUSD": ["mean-reversion"],
+  "XAUUSD": ["mean-reversion"]
 }
 ```
+
+配列形式で将来の複数戦略並行運用に対応。
 
 ### 戦略追加方法
 
 1. `strategies/<strategy-name>/` ディレクトリを作成
 2. `analyze.sh` スクリプトを実装（インターフェースは `base/strategy.sh` 参照）
-3. `config.json` で戦略メタデータを定義
+3. `config/strategies/<strategy-name>/defaults.json` で戦略設定を定義
 4. `rules/strategies/<strategy-name>.md` でドキュメント作成
+5. `config/assignments.json` で通貨をマッピング
+
+### 通貨別オーバーライド
+
+特定通貨のパラメータをカスタマイズする場合:
+
+```bash
+# 例: 貴金属用のカスタム閾値
+config/strategies/mean-reversion/overrides/XAUUSD.json
+```
+
+オーバーライドファイルには差分のみ記述（戦略デフォルトにマージされる）。
 
 ### 同一通貨で複数戦略を並行実行する場合
 
-通貨設定を複製:
-```
-config/currencies/USDJPY-MR.json  # Mean Reversion
-config/currencies/USDJPY-TF.json  # Trend Following
+`assignments.json` で複数戦略を指定（将来対応）:
+```json
+{
+  "USDJPY": ["mean-reversion", "trend-following"]
+}
 ```
 
 ## メインスクリプト
@@ -91,7 +127,7 @@ config/currencies/USDJPY-TF.json  # Trend Following
 ### 処理フロー
 
 ```
-1. config/currencies/ → 通貨設定読み込み（strategy フィールド含む）
+1. config/ → 設定読み込み（通貨 + 戦略デフォルト + オーバーライドをマージ）
 2. yahoo-finance → 価格履歴（1h + 1d マルチタイムフレーム）
 3. strategies/<strategy>/analyze.sh → 戦略別分析 + ルールベース判断
 4. saxo → リアルタイム価格・残高
@@ -135,7 +171,7 @@ config/currencies/USDJPY-TF.json  # Trend Following
 **概要:**
 - 優先順位: AI提案値 > ATR基準の静的計算
 - 静的計算: SL = ATR × 1.5、TP = SL幅 × 2.0
-- 設定: `config/currencies/*.json` の `sl_tp` フィールド
+- 設定: `config/strategies/<strategy>/defaults.json` の `sl_tp` フィールド
 
 ## 環境変数（.env）
 
@@ -169,10 +205,11 @@ config/currencies/USDJPY-TF.json  # Trend Following
 
 | # | ファイル | 内容 |
 |---|----------|------|
-| 1 | `scripts/config/currencies/<SYMBOL>.json` | 通貨設定ファイル |
-| 2 | `.github/workflows/auto-trade-1h.yml` | 1時間足ワークフロー（選択肢 + デフォルト配列） |
-| 3 | `.github/workflows/auto-trade-30m.yml` | 30分足ワークフロー（選択肢 + デフォルト配列） |
-| 4 | `scripts/CLAUDE.md` | 対応通貨ペア一覧（このファイル） |
+| 1 | `scripts/config/currencies/<SYMBOL>.json` | 通貨固有データ |
+| 2 | `scripts/config/assignments.json` | 通貨→戦略マッピング |
+| 3 | `.github/workflows/auto-trade-1h.yml` | 1時間足ワークフロー（選択肢 + デフォルト配列） |
+| 4 | `.github/workflows/auto-trade-30m.yml` | 30分足ワークフロー（選択肢 + デフォルト配列） |
+| 5 | `scripts/CLAUDE.md` | 対応通貨ペア一覧（このファイル） |
 
 ### 追加手順
 
@@ -182,12 +219,11 @@ config/currencies/USDJPY-TF.json  # Trend Following
 ./saxo/search-instruments.sh "GBPJPY"
 ```
 
-#### 2. `config/currencies/` に JSON ファイルを追加
+#### 2. `config/currencies/` に JSON ファイルを追加（通貨固有データのみ）
 
 ```json
 {
   "symbol": "GBPJPY",
-  "strategy": "mean-reversion",
   "yahoo_symbol": "GBPJPY=X",
   "saxo_uic": 99,
   "saxo_asset_type": "FxSpot",
@@ -196,41 +232,41 @@ config/currencies/USDJPY-TF.json  # Trend Following
   "pip_size": 0.01,
   "decimal_places": 3,
   "default_percentage": 10,
-  "thresholds": {
-    "rsi_overbought": 70,
-    "rsi_oversold": 30,
-    "rsi_buy_threshold": 40,
-    "rsi_sell_threshold": 60,
-    "min_conditions": 2
-  },
-  "timeframes": {
-    "primary": "1h",
-    "primary_range": "10d",
-    "secondary": "1d",
-    "secondary_range": "30d"
-  },
-  "sl_tp": {
-    "enabled": true,
-    "stop_loss": { "mode": "atr", "multiplier": 1.5 },
-    "take_profit": { "mode": "ratio", "value": 2.0 }
-  }
+  "max_amount": 10000
 }
 ```
 
-#### 3. ワークフローに追加
+#### 3. `config/assignments.json` に戦略マッピングを追加
+
+```json
+{
+  "GBPJPY": ["mean-reversion"],
+  ...
+}
+```
+
+#### 4. ワークフローに追加
 
 `auto-trade-1h.yml` と `auto-trade-30m.yml` の両方で:
 
 1. `workflow_dispatch.inputs.currency.options` に追加
 2. デフォルト配列 `currencies: '["USDJPY", ...]'` に追加
 
-#### 4. このドキュメントの「対応通貨ペア」テーブルを更新
+#### 5. このドキュメントの「対応通貨ペア」テーブルを更新
+
+#### 6. （任意）通貨別オーバーライドが必要な場合
+
+特定通貨でパラメータをカスタマイズする場合のみ:
+```bash
+config/strategies/mean-reversion/overrides/GBPJPY.json
+```
 
 ### 削除手順
 
 1. `config/currencies/<SYMBOL>.json` を削除
-2. 両ワークフローから `options` と デフォルト配列を削除
-3. このドキュメントの「対応通貨ペア」テーブルから削除
+2. `config/assignments.json` からマッピングを削除
+3. 両ワークフローから `options` と デフォルト配列を削除
+4. このドキュメントの「対応通貨ペア」テーブルから削除
 
 ## 関連ドキュメント（rules/）
 

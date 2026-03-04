@@ -58,9 +58,10 @@
 1. `scripts/strategies/breakout/analyze.sh` を作成
 2. BB squeeze 検出ロジックを強化
 3. ブレイクアウトレベル検出を実装
-4. 通貨設定で `"strategy": "breakout"` を指定
+4. `config/strategies/breakout/defaults.json` で戦略設定を定義
+5. `config/assignments.json` で通貨をマッピング
 
 ## Files (予定)
 
 - `scripts/strategies/breakout/analyze.sh`
-- `scripts/strategies/breakout/config.json`
+- `scripts/config/strategies/breakout/defaults.json`

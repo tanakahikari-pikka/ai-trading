@@ -1,0 +1,11 @@
+{
+  "EURUSD": ["mean-reversion"],
+  "USDJPY": ["mean-reversion"],
+  "GBPUSD": ["mean-reversion"],
+  "GBPJPY": ["mean-reversion"],
+  "EURJPY": ["mean-reversion"],
+  "AUDUSD": ["mean-reversion"],
+  "USDCAD": ["mean-reversion"],
+  "XAUUSD": ["mean-reversion"],
+  "XPTUSD": ["mean-reversion"]
+}
