@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 # Get current orders from Saxo Bank API
 # Usage: get-orders.sh
 
@@ -31,7 +32,6 @@ fi
 echo "$RESPONSE" | jq -r '.Data[] | "[\(.DisplayAndFormat.Symbol)] \(.OrderType) \(.BuySell) \(.Amount) @ \(.Price)"' >&2
 
 # Output formatted JSON
-echo ""
 echo "$RESPONSE" | jq '.Data | map({
     orderId: .OrderId,
     symbol: .DisplayAndFormat.Symbol,

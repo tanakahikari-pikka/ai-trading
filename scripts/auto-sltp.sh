@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 # Auto SL/TP setter - Sets SL/TP on positions that don't have them
 # Usage: auto-sltp.sh [--dry-run]
 #
@@ -50,14 +51,16 @@ get_decimal_places() {
 calculate_atr() {
     local yahoo_symbol="$1"
 
-    PRICE_DATA=$("$SCRIPT_DIR/yahoo-finance/get-chart.sh" "$yahoo_symbol" "1h" "10d" 2>/dev/null)
+    PRICE_DATA=$("$SCRIPT_DIR/yahoo-finance/get-chart.sh" "$yahoo_symbol" "1h" "10d" 2>&1) || true
     if [[ -z "$PRICE_DATA" ]]; then
+        echo "ERROR: get-chart.sh returned empty for $yahoo_symbol" >&2
         echo "null"
         return 1
     fi
 
-    ATR_DATA=$(echo "$PRICE_DATA" | "$SCRIPT_DIR/indicators/atr.sh" 14 2>/dev/null)
+    ATR_DATA=$(echo "$PRICE_DATA" | "$SCRIPT_DIR/indicators/atr.sh" 14 2>&1) || true
     if [[ -z "$ATR_DATA" ]]; then
+        echo "ERROR: atr.sh returned empty for $yahoo_symbol" >&2
         echo "null"
         return 1
     fi
@@ -88,6 +91,8 @@ set_sltp() {
     fi
 
     local amount_abs=$(echo "$amount" | tr -d '-')
+    local sl_ok=true
+    local tp_ok=true
 
     # Set Stop Loss
     if [[ "$needs_sl" == "true" ]]; then
@@ -121,7 +126,8 @@ set_sltp() {
             if echo "$SL_RESPONSE" | jq -e '.OrderId' > /dev/null 2>&1; then
                 echo "  SL set: OrderId $(echo "$SL_RESPONSE" | jq -r '.OrderId')" >&2
             else
-                echo "  SL failed: $(echo "$SL_RESPONSE" | jq -r '.ErrorInfo.Message // .Message // "Unknown error"')" >&2
+                echo "  SL FAILED: $(echo "$SL_RESPONSE" | jq -r '.ErrorInfo.Message // .Message // "Unknown error"')" >&2
+                sl_ok=false
             fi
         fi
     fi
@@ -158,9 +164,14 @@ set_sltp() {
             if echo "$TP_RESPONSE" | jq -e '.OrderId' > /dev/null 2>&1; then
                 echo "  TP set: OrderId $(echo "$TP_RESPONSE" | jq -r '.OrderId')" >&2
             else
-                echo "  TP failed: $(echo "$TP_RESPONSE" | jq -r '.ErrorInfo.Message // .Message // "Unknown error"')" >&2
+                echo "  TP FAILED: $(echo "$TP_RESPONSE" | jq -r '.ErrorInfo.Message // .Message // "Unknown error"')" >&2
+                tp_ok=false
             fi
         fi
+    fi
+
+    if [[ "$sl_ok" == "false" || "$tp_ok" == "false" ]]; then
+        return 1
     fi
 }
 
@@ -170,7 +181,24 @@ echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >&2
 echo "" >&2
 
 # Check positions without SL/TP
-MISSING=$("$SCRIPT_DIR/saxo/check-sltp-status.sh" 2>/dev/null)
+CHECK_STDERR=$(mktemp)
+MISSING=$("$SCRIPT_DIR/saxo/check-sltp-status.sh" 2>"$CHECK_STDERR") || true
+CHECK_EXIT=$?
+if [[ $CHECK_EXIT -ne 0 ]]; then
+    echo "FATAL: check-sltp-status.sh failed with exit code $CHECK_EXIT" >&2
+    cat "$CHECK_STDERR" >&2
+    rm -f "$CHECK_STDERR"
+    exit 1
+fi
+cat "$CHECK_STDERR" >&2
+rm -f "$CHECK_STDERR"
+
+if ! echo "$MISSING" | jq empty 2>/dev/null; then
+    echo "FATAL: check-sltp-status.sh returned invalid JSON" >&2
+    echo "Output: $MISSING" >&2
+    exit 1
+fi
+
 MISSING_COUNT=$(echo "$MISSING" | jq 'length')
 
 if [[ "$MISSING_COUNT" -eq 0 ]]; then
@@ -184,10 +212,10 @@ echo "Processing $MISSING_COUNT positions..." >&2
 echo "" >&2
 
 PROCESSED=0
-RESULTS=()
+FAILED=0
 
-# Process each position
-echo "$MISSING" | jq -c '.[]' | while read -r position; do
+# Process each position (process substitution to avoid subshell)
+while read -r position; do
     POSITION_ID=$(echo "$position" | jq -r '.positionId')
     SYMBOL=$(echo "$position" | jq -r '.symbol')
     AMOUNT=$(echo "$position" | jq -r '.amount')
@@ -208,7 +236,8 @@ echo "$MISSING" | jq -c '.[]' | while read -r position; do
     ATR=$(calculate_atr "$YAHOO_SYMBOL")
 
     if [[ "$ATR" == "null" || -z "$ATR" ]]; then
-        echo "  Warning: Could not calculate ATR for $SYMBOL, skipping" >&2
+        echo "  ERROR: Could not calculate ATR for $SYMBOL, skipping" >&2
+        FAILED=$((FAILED + 1))
         continue
     fi
 
@@ -229,23 +258,33 @@ echo "$MISSING" | jq -c '.[]' | while read -r position; do
     echo "  Calculated: SL=$SL_PRICE, TP=$TP_PRICE" >&2
 
     # Set SL/TP
-    set_sltp "$POSITION_ID" "$ACCOUNT_KEY" "$UIC" "$ASSET_TYPE" "$SYMBOL" "$AMOUNT" "$OPEN_PRICE" "$SL_PRICE" "$TP_PRICE" "$NEEDS_SL" "$NEEDS_TP"
-
-    PROCESSED=$((PROCESSED + 1))
+    if set_sltp "$POSITION_ID" "$ACCOUNT_KEY" "$UIC" "$ASSET_TYPE" "$SYMBOL" "$AMOUNT" "$OPEN_PRICE" "$SL_PRICE" "$TP_PRICE" "$NEEDS_SL" "$NEEDS_TP"; then
+        PROCESSED=$((PROCESSED + 1))
+    else
+        FAILED=$((FAILED + 1))
+    fi
     echo "" >&2
-done
+done < <(echo "$MISSING" | jq -c '.[]')
 
 echo "=== Complete ===" >&2
-echo "Processed: $MISSING_COUNT positions" >&2
+echo "Processed: $PROCESSED, Failed: $FAILED, Total: $MISSING_COUNT" >&2
+
+if [[ $FAILED -gt 0 ]]; then
+    echo "WARNING: $FAILED positions failed to get SL/TP" >&2
+fi
 
 # Output result JSON
 jq -n \
-    --arg status "ok" \
-    --argjson processed "$MISSING_COUNT" \
+    --arg status "$(if [[ $FAILED -gt 0 ]]; then echo "partial"; else echo "ok"; fi)" \
+    --argjson processed "$PROCESSED" \
+    --argjson failed "$FAILED" \
+    --argjson total "$MISSING_COUNT" \
     --arg dryRun "$DRY_RUN" \
     '{
         status: $status,
         processed: $processed,
+        failed: $failed,
+        total: $total,
         dryRun: ($dryRun == "true"),
         timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))
     }'

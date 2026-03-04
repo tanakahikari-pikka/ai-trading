@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 # Add Stop Loss and Take Profit to existing position
 # Usage: add-sl-tp.sh <position_id> <sl_price> [tp_price]
 

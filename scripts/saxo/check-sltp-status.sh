@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 # Check which positions are missing SL/TP orders
 # Usage: check-sltp-status.sh
 # Output: JSON array of positions without SL and/or TP
@@ -92,5 +93,4 @@ if [[ "$MISSING_COUNT" -gt 0 ]]; then
     echo "$RESULT" | jq -r '.[] | "[\(.symbol)] \(.direction) \(.amount) @ \(.openPrice) | SL: \(if .needsSL then "MISSING" else "OK" end) | TP: \(if .needsTP then "MISSING" else "OK" end)"' >&2
 fi
 
-echo ""
 echo "$RESULT"

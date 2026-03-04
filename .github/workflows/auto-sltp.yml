@@ -23,11 +23,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .env
-        run: |
-          echo "SAXO_ACCESS_TOKEN=${{ secrets.SAXO_ACCESS_TOKEN }}" >> .env
-          echo "SAXO_BASE_URL=https://gateway.saxobank.com/sim/openapi" >> .env
-
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -41,9 +36,14 @@ jobs:
         run: |
           chmod +x scripts/*.sh scripts/**/*.sh
 
-          # Check status
-          MISSING=$(./scripts/saxo/check-sltp-status.sh 2>/dev/null)
-          COUNT=$(echo "$MISSING" | jq 'length')
+          MISSING=$(./scripts/saxo/check-sltp-status.sh)
+          COUNT=$(echo "$MISSING" | jq 'length' 2>/dev/null)
+
+          if [ -z "$COUNT" ] || ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: Failed to determine position count. Got: '$COUNT'"
+            echo "Raw output: $MISSING"
+            exit 1
+          fi
 
           echo "missing_count=$COUNT" >> $GITHUB_OUTPUT
           echo "Found $COUNT positions without SL/TP"
@@ -69,7 +69,7 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          COUNT=${{ steps.check.outputs.missing_count }}
+          COUNT="${{ steps.check.outputs.missing_count }}"
 
           curl -s -X POST "$DISCORD_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
