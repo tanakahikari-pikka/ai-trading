@@ -38,7 +38,7 @@
 
 | ディレクトリ | 責務 |
 |--------------|------|
-| `ai/` | AI分析（OpenAI API で教育的フィードバック付き判断） |
+| `ai/` | AI分析（詳細: `rules/ai-response-spec.md`） |
 | `config/currencies/` | 通貨ペア設定ファイル（JSON） |
 | `indicators/` | テクニカル指標計算（RSI, SMA, EMA, MACD, ボリンジャー, ATR） |
 | `strategies/` | 戦略別分析ロジック（mean-reversion, trend-following, breakout等） |
@@ -51,11 +51,11 @@
 
 ### 利用可能な戦略
 
-| 戦略名 | 説明 | 状態 |
-|--------|------|------|
-| `mean-reversion` | 平均回帰型: RSI/BBで過買い・過売りを検出 | 実装済み |
-| `trend-following` | トレンドフォロー型: トレンド方向に沿った取引 | 設計中 |
-| `breakout` | ブレイクアウト型: サポート/レジスタンスの突破を狙う | 設計中 |
+| 戦略名 | 説明 | 状態 | 詳細 |
+|--------|------|------|------|
+| `mean-reversion` | 平均回帰型: RSI/BBで過買い・過売りを検出 | 実装済み | `rules/strategies/mean-reversion.md` |
+| `trend-following` | トレンドフォロー型: トレンド方向に沿った取引 | 設計中 | `rules/strategies/trend-following.md` |
+| `breakout` | ブレイクアウト型: サポート/レジスタンスの突破を狙う | 設計中 | `rules/strategies/breakout.md` |
 
 ### 戦略の指定方法
 
@@ -95,7 +95,7 @@ config/currencies/USDJPY-TF.json  # Trend Following
 2. yahoo-finance → 価格履歴（1h + 1d マルチタイムフレーム）
 3. strategies/<strategy>/analyze.sh → 戦略別分析 + ルールベース判断
 4. saxo → リアルタイム価格・残高
-5. ai/analyze-trade.sh → AI分析（教育的フィードバック付き）
+5. ai/analyze-trade.sh → AI分析（仕様: rules/ai-response-spec.md）
 6. 最終判断（ルールベース + AI確認）
 7. SL/TP価格計算（ATR基準）
 8. saxo/place-order → 発注 + SL/TP関連注文（go判定時）
@@ -114,71 +114,28 @@ config/currencies/USDJPY-TF.json  # Trend Following
 | ATR | `indicators/atr.sh` | 14期間 |
 | 一括分析 | `indicators/analyze.sh` | 全指標 + ルール判定 |
 
-## ルールベース判断（位置系ALL + 勢い系）
+## ルールベース判断
 
-**Buy発火条件: 位置系ALL AND 勢い系**
+エントリー条件、フィルター、閾値等の詳細は以下を参照:
 
-| カテゴリ | 条件 | 必須 |
-|----------|------|:----:|
-| 位置系 | RSI < RSI_BUY_THRESHOLD（動的） | ✅ |
-| 位置系 | %B < 30（BB下限付近） | ✅ |
-| 勢い系 | MACD > Signal AND (フレッシュクロス5本以内 OR ヒストグラム3本連続増加) | ✅ |
+| ドキュメント | 内容 |
+|--------------|------|
+| `rules/trading-rules.md` | 運用ルール詳細（エントリー条件、フィルター、閾値） |
+| `rules/trading-logic-summary.md` | ロジックまとめ（概要版） |
 
-**Sell発火条件: 位置系ALL AND 勢い系**
-
-| カテゴリ | 条件 | 必須 |
-|----------|------|:----:|
-| 位置系 | RSI > RSI_SELL_THRESHOLD（動的） | ✅ |
-| 位置系 | %B > 70（BB上限付近） | ✅ |
-| 勢い系 | MACD < Signal AND (フレッシュクロス5本以内 OR ヒストグラム3本連続減少) | ✅ |
-
-**RSI動的閾値:**
-- 高ボラ（atr_ratio > 1.5）: 30/70（厳格）
-- 通常: 40/60（緩い）
-
-**フィルター:**
-- **ATRフィルター**: atr_ratio < 0.7 または > 3.0 でシグナル抑制（異常ボラ対策）
-- **MTFフィルター**: 4h足で確認。Buy は 4h SMA20 > 4h SMA50、Sell は 4h SMA20 < 4h SMA50 の場合のみ許可
+**概要:**
+- Buy/Sell: 位置系（RSI + %B）ALL AND 勢い系（MACD）
+- フィルター: ATR異常値抑制 + MTF確認（4h足）
+- RSI閾値: ボラティリティに応じて動的調整
 
 ## Stop Loss / Take Profit
 
-### 優先順位
+詳細: `rules/trading-rules.md` の「Stop Loss / Take Profit 設定」セクション
 
-1. **AI 提案値**: AI が `sl_tp.stop_loss` / `sl_tp.take_profit` を返した場合
-2. **静的計算**: AI が提案しない場合、ATR 基準で計算
-
-### AI 動的調整
-
-AI がチャートを分析し、最適な SL/TP を提案：
-```json
-{
-  "sl_tp": {
-    "stop_loss": 155.50,
-    "take_profit": 157.20,
-    "reasoning": "直近安値の下にSL、BBアッパー手前でTP"
-  }
-}
-```
-
-### 静的計算（フォールバック）
-
-| 項目 | 計算方法 |
-|------|----------|
-| Stop Loss | ATR × 1.5 |
-| Take Profit | SL幅 × 2.0 |
-
-**設定（config/currencies/*.json）:**
-```json
-{
-  "sl_tp": {
-    "enabled": true,
-    "stop_loss": { "mode": "atr", "multiplier": 1.5 },
-    "take_profit": { "mode": "ratio", "value": 2.0 }
-  }
-}
-```
-
-詳細: `../rules/trading-rules.md` の「Stop Loss / Take Profit 設定」セクション
+**概要:**
+- 優先順位: AI提案値 > ATR基準の静的計算
+- 静的計算: SL = ATR × 1.5、TP = SL幅 × 2.0
+- 設定: `config/currencies/*.json` の `sl_tp` フィールド
 
 ## 環境変数（.env）
 
@@ -204,15 +161,28 @@ AI がチャートを分析し、最適な SL/TP を提案：
 ./auto-trade.sh XAUUSD --dry-run # Gold ドライラン
 ```
 
-## 通貨追加方法
+## 通貨追加・削除方法
 
-### 1. Saxo UIC を検索
+**重要**: 通貨ペアを追加・削除する際は、設定ファイルとワークフローの両方を必ず同時に更新すること。片方だけ更新すると不整合が発生する。
+
+### 更新が必要なファイル一覧
+
+| # | ファイル | 内容 |
+|---|----------|------|
+| 1 | `scripts/config/currencies/<SYMBOL>.json` | 通貨設定ファイル |
+| 2 | `.github/workflows/auto-trade-1h.yml` | 1時間足ワークフロー（選択肢 + デフォルト配列） |
+| 3 | `.github/workflows/auto-trade-30m.yml` | 30分足ワークフロー（選択肢 + デフォルト配列） |
+| 4 | `scripts/CLAUDE.md` | 対応通貨ペア一覧（このファイル） |
+
+### 追加手順
+
+#### 1. Saxo UIC を検索
 
 ```bash
 ./saxo/search-instruments.sh "GBPJPY"
 ```
 
-### 2. `config/currencies/` に JSON ファイルを追加
+#### 2. `config/currencies/` に JSON ファイルを追加
 
 ```json
 {
@@ -247,11 +217,28 @@ AI がチャートを分析し、最適な SL/TP を提案：
 }
 ```
 
-## 関連ドキュメント
+#### 3. ワークフローに追加
 
-- `../rules/trading-rules.md` - 運用ルール詳細
-- `../rules/ai-response-spec.md` - AIレスポンス仕様（教育的フィードバック）
-- `../rules/strategies/` - 戦略別ドキュメント
-  - `mean-reversion.md` - 平均回帰型戦略
-  - `trend-following.md` - トレンドフォロー型戦略（設計中）
-  - `breakout.md` - ブレイクアウト型戦略（設計中）
+`auto-trade-1h.yml` と `auto-trade-30m.yml` の両方で:
+
+1. `workflow_dispatch.inputs.currency.options` に追加
+2. デフォルト配列 `currencies: '["USDJPY", ...]'` に追加
+
+#### 4. このドキュメントの「対応通貨ペア」テーブルを更新
+
+### 削除手順
+
+1. `config/currencies/<SYMBOL>.json` を削除
+2. 両ワークフローから `options` と デフォルト配列を削除
+3. このドキュメントの「対応通貨ペア」テーブルから削除
+
+## 関連ドキュメント（rules/）
+
+| ファイル | 内容 |
+|----------|------|
+| `rules/trading-rules.md` | 運用ルール詳細（エントリー条件、フィルター、SL/TP等） |
+| `rules/trading-logic-summary.md` | ロジックまとめ（概要版） |
+| `rules/ai-response-spec.md` | AIレスポンス仕様（教育的フィードバック） |
+| `rules/strategies/mean-reversion.md` | 平均回帰型戦略 |
+| `rules/strategies/trend-following.md` | トレンドフォロー型戦略（設計中） |
+| `rules/strategies/breakout.md` | ブレイクアウト型戦略（設計中） |

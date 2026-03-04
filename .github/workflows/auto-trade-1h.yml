@@ -17,8 +17,9 @@ on:
           - GBPJPY
           - EURJPY
           - AUDUSD
+          - USDCAD
           - XAUUSD
-          - XAGUSD
+          - XPTUSD
 
 permissions:
   contents: write
@@ -27,7 +28,7 @@ jobs:
   trade:
     uses: ./.github/workflows/_trade-job.yml
     with:
-      currencies: ${{ github.event.inputs.currency != '' && format('["{0}"]', github.event.inputs.currency) || '["USDJPY", "EURUSD", "GBPUSD", "GBPJPY", "EURJPY", "AUDUSD", "XAUUSD", "XAGUSD"]' }}
+      currencies: ${{ github.event.inputs.currency != '' && format('["{0}"]', github.event.inputs.currency) || '["USDJPY", "EURUSD", "GBPUSD", "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "XAUUSD", "XPTUSD"]' }}
       primary_timeframe: '1h'
       secondary_timeframe: '4h'
       primary_range: '10d'
