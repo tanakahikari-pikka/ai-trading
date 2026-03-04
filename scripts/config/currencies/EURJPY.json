@@ -1,7 +1,7 @@
 {
   "symbol": "EURJPY",
   "yahoo_symbol": "EURJPY=X",
-  "saxo_uic": 47,
+  "saxo_uic": 18,
   "saxo_asset_type": "FxSpot",
   "display_name": "EUR/JPY",
   "description": "ユーロ/日本円",
