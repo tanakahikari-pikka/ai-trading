@@ -47,10 +47,11 @@
 1. `scripts/strategies/trend-following/analyze.sh` を作成
 2. ADX インディケーターを追加
 3. トレンドフィルターを実装
-4. 通貨設定で `"strategy": "trend-following"` を指定
+4. `config/strategies/trend-following/defaults.json` で戦略設定を定義
+5. `config/assignments.json` で通貨をマッピング
 
 ## Files (予定)
 
 - `scripts/strategies/trend-following/analyze.sh`
-- `scripts/strategies/trend-following/config.json`
+- `scripts/config/strategies/trend-following/defaults.json`
 - `scripts/indicators/adx.sh` (新規)

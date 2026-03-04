@@ -4,6 +4,59 @@
 
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="$LIB_DIR/../config/currencies"
+STRATEGIES_DIR="$LIB_DIR/../config/strategies"
+ASSIGNMENTS_FILE="$LIB_DIR/../config/assignments.json"
+
+# Get strategies assigned to a currency
+# Usage: get_strategies_for_currency <symbol>
+# Returns: Array of strategy names (newline-separated)
+get_strategies_for_currency() {
+    local symbol="$1"
+
+    if [[ -f "$ASSIGNMENTS_FILE" ]]; then
+        jq -r --arg sym "$symbol" '.[$sym] // ["mean-reversion"] | .[]' "$ASSIGNMENTS_FILE"
+    else
+        echo "mean-reversion"
+    fi
+}
+
+# Load merged configuration (currency + strategy defaults + overrides)
+# Usage: load_merged_config <symbol> [strategy]
+# Returns: Merged JSON to stdout
+load_merged_config() {
+    local symbol="$1"
+    local strategy="${2:-}"
+    local currency_file="$CONFIG_DIR/${symbol}.json"
+
+    if [[ ! -f "$currency_file" ]]; then
+        echo "{}"
+        return 1
+    fi
+
+    # If strategy not specified, get from assignments (first one)
+    if [[ -z "$strategy" ]]; then
+        strategy=$(get_strategies_for_currency "$symbol" | head -n1)
+    fi
+
+    local strategy_defaults="$STRATEGIES_DIR/$strategy/defaults.json"
+    local strategy_override="$STRATEGIES_DIR/$strategy/overrides/${symbol}.json"
+
+    # Start with currency config
+    local merged
+    merged=$(cat "$currency_file")
+
+    # Merge strategy defaults (if exists)
+    if [[ -f "$strategy_defaults" ]]; then
+        merged=$(echo "$merged" | jq --slurpfile defaults "$strategy_defaults" '. * $defaults[0]')
+    fi
+
+    # Merge currency-specific override (if exists)
+    if [[ -f "$strategy_override" ]]; then
+        merged=$(echo "$merged" | jq --slurpfile override "$strategy_override" '. * $override[0]')
+    fi
+
+    echo "$merged"
+}
 
 # Load currency configuration
 # Usage: load_currency_config <symbol>
@@ -19,43 +72,47 @@ load_currency_config() {
         return 1
     fi
 
+    # Get merged configuration
+    local merged_config
+    merged_config=$(load_merged_config "$symbol")
+
     # Load configuration into global variables
-    SYMBOL=$(jq -r '.symbol' "$config_file")
-    YAHOO_SYMBOL=$(jq -r '.yahoo_symbol' "$config_file")
-    SAXO_UIC=$(jq -r '.saxo_uic' "$config_file")
-    SAXO_ASSET_TYPE=$(jq -r '.saxo_asset_type' "$config_file")
-    DISPLAY_NAME=$(jq -r '.display_name' "$config_file")
-    DESCRIPTION=$(jq -r '.description' "$config_file")
-    PIP_SIZE=$(jq -r '.pip_size' "$config_file")
-    DECIMAL_PLACES=$(jq -r '.decimal_places' "$config_file")
-    DEFAULT_PERCENTAGE=$(jq -r '.default_percentage' "$config_file")
+    SYMBOL=$(echo "$merged_config" | jq -r '.symbol')
+    YAHOO_SYMBOL=$(echo "$merged_config" | jq -r '.yahoo_symbol')
+    SAXO_UIC=$(echo "$merged_config" | jq -r '.saxo_uic')
+    SAXO_ASSET_TYPE=$(echo "$merged_config" | jq -r '.saxo_asset_type')
+    DISPLAY_NAME=$(echo "$merged_config" | jq -r '.display_name')
+    DESCRIPTION=$(echo "$merged_config" | jq -r '.description')
+    PIP_SIZE=$(echo "$merged_config" | jq -r '.pip_size')
+    DECIMAL_PLACES=$(echo "$merged_config" | jq -r '.decimal_places')
+    DEFAULT_PERCENTAGE=$(echo "$merged_config" | jq -r '.default_percentage')
 
     # Thresholds
-    RSI_OVERBOUGHT=$(jq -r '.thresholds.rsi_overbought' "$config_file")
-    RSI_OVERSOLD=$(jq -r '.thresholds.rsi_oversold' "$config_file")
-    RSI_BUY_THRESHOLD=$(jq -r '.thresholds.rsi_buy_threshold' "$config_file")
-    RSI_SELL_THRESHOLD=$(jq -r '.thresholds.rsi_sell_threshold' "$config_file")
-    MIN_CONDITIONS=$(jq -r '.thresholds.min_conditions' "$config_file")
-    FRESH_CROSS_LOOKBACK=$(jq -r '.thresholds.fresh_cross_lookback // 5' "$config_file")
+    RSI_OVERBOUGHT=$(echo "$merged_config" | jq -r '.thresholds.rsi_overbought')
+    RSI_OVERSOLD=$(echo "$merged_config" | jq -r '.thresholds.rsi_oversold')
+    RSI_BUY_THRESHOLD=$(echo "$merged_config" | jq -r '.thresholds.rsi_buy_threshold')
+    RSI_SELL_THRESHOLD=$(echo "$merged_config" | jq -r '.thresholds.rsi_sell_threshold')
+    MIN_CONDITIONS=$(echo "$merged_config" | jq -r '.thresholds.min_conditions')
+    FRESH_CROSS_LOOKBACK=$(echo "$merged_config" | jq -r '.thresholds.fresh_cross_lookback // 5')
 
     # Timeframes (ENV > JSON for workflow override)
-    PRIMARY_TIMEFRAME="${PRIMARY_TIMEFRAME:-$(jq -r '.timeframes.primary' "$config_file")}"
-    PRIMARY_RANGE="${PRIMARY_RANGE:-$(jq -r '.timeframes.primary_range' "$config_file")}"
-    SECONDARY_TIMEFRAME="${SECONDARY_TIMEFRAME:-$(jq -r '.timeframes.secondary' "$config_file")}"
-    SECONDARY_RANGE="${SECONDARY_RANGE:-$(jq -r '.timeframes.secondary_range' "$config_file")}"
+    PRIMARY_TIMEFRAME="${PRIMARY_TIMEFRAME:-$(echo "$merged_config" | jq -r '.timeframes.primary')}"
+    PRIMARY_RANGE="${PRIMARY_RANGE:-$(echo "$merged_config" | jq -r '.timeframes.primary_range')}"
+    SECONDARY_TIMEFRAME="${SECONDARY_TIMEFRAME:-$(echo "$merged_config" | jq -r '.timeframes.secondary')}"
+    SECONDARY_RANGE="${SECONDARY_RANGE:-$(echo "$merged_config" | jq -r '.timeframes.secondary_range')}"
 
     # SL/TP settings
-    SL_TP_ENABLED=$(jq -r '.sl_tp.enabled // false' "$config_file")
-    SL_MODE=$(jq -r '.sl_tp.stop_loss.mode // "atr"' "$config_file")
-    SL_MULTIPLIER=$(jq -r '.sl_tp.stop_loss.multiplier // 1.5' "$config_file")
-    TP_MODE=$(jq -r '.sl_tp.take_profit.mode // "ratio"' "$config_file")
-    TP_VALUE=$(jq -r '.sl_tp.take_profit.value // 2.0' "$config_file")
+    SL_TP_ENABLED=$(echo "$merged_config" | jq -r '.sl_tp.enabled // false')
+    SL_MODE=$(echo "$merged_config" | jq -r '.sl_tp.stop_loss.mode // "atr"')
+    SL_MULTIPLIER=$(echo "$merged_config" | jq -r '.sl_tp.stop_loss.multiplier // 1.5')
+    TP_MODE=$(echo "$merged_config" | jq -r '.sl_tp.take_profit.mode // "ratio"')
+    TP_VALUE=$(echo "$merged_config" | jq -r '.sl_tp.take_profit.value // 2.0')
 
     # Trading limits
-    MAX_AMOUNT=$(jq -r '.max_amount // 10000' "$config_file")
+    MAX_AMOUNT=$(echo "$merged_config" | jq -r '.max_amount // 10000')
 
-    # Strategy (default: mean-reversion for backward compatibility)
-    STRATEGY=$(jq -r '.strategy // "mean-reversion"' "$config_file")
+    # Strategy from assignments (first one for backward compatibility)
+    STRATEGY=$(get_strategies_for_currency "$symbol" | head -n1)
 
     # Export for subshells
     export SYMBOL YAHOO_SYMBOL SAXO_UIC SAXO_ASSET_TYPE DISPLAY_NAME DESCRIPTION

@@ -18,7 +18,10 @@
 | EURJPY | EUR/JPY | 18 | 10% |
 | XAUUSD | XAU/USD (Gold) | 5000 | 5% |
 
-設定ファイル: `scripts/config/currencies/*.json`
+設定ファイル:
+- 通貨固有データ: `scripts/config/currencies/*.json`
+- 戦略設定: `scripts/config/strategies/<strategy>/defaults.json`
+- 通貨→戦略マッピング: `scripts/config/assignments.json`
 
 ---
 
@@ -135,7 +138,8 @@
 **フレッシュクロス（N本以内、デフォルト5）:**
 - クロス直後は勢いが強い傾向があり、エントリー精度が高い
 - N本以上前のクロスは「勢いが継続しているか不明」のため除外
-- `config/currencies/*.json` の `thresholds.fresh_cross_lookback` でカスタマイズ可能
+- `config/strategies/<strategy>/defaults.json` の `thresholds.fresh_cross_lookback` でカスタマイズ可能
+- 通貨別オーバーライド: `config/strategies/<strategy>/overrides/<SYMBOL>.json`
 - ボラの高い銘柄（XAUUSDなど）は3本、安定した銘柄（USDJPYなど）は7本など調整可能
 
 **ヒストグラム3本連続変化:**
@@ -481,11 +485,15 @@ TP価格 = エントリー価格 - (SL幅 × リスクリワード比)
 | `sl_tp.take_profit.mode` | `"ratio"` | 計算モード（ratio/atr/pips/percentage） |
 | `sl_tp.take_profit.value` | `2.0` | リスクリワード比 |
 
-### 通貨設定例（config/currencies/*.json）
+### 戦略デフォルト設定（config/strategies/mean-reversion/defaults.json）
 
 ```json
 {
-  "symbol": "USDJPY",
+  "thresholds": {
+    "rsi_overbought": 70,
+    "rsi_oversold": 30,
+    "fresh_cross_lookback": 5
+  },
   "sl_tp": {
     "enabled": true,
     "stop_loss": {
@@ -499,6 +507,8 @@ TP価格 = エントリー価格 - (SL幅 × リスクリワード比)
   }
 }
 ```
+
+通貨別のカスタマイズは `config/strategies/mean-reversion/overrides/<SYMBOL>.json` に差分のみ記述。
 
 ### Saxo Bank API 発注形式
 
