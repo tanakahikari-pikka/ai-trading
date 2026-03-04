@@ -32,6 +32,8 @@
 | AUDUSD | AUD/USD | 豪ドル/米ドル |
 | XAUUSD | XAU/USD | 金/米ドル (Gold) |
 | XAGUSD | XAG/USD | 銀/米ドル (Silver) |
+| USDCAD | USD/CAD | 米ドル/カナダドル |
+| XPTUSD | XPT/USD | プラチナ/米ドル (Platinum) |
 
 ## ディレクトリ構成
 
