@@ -22,9 +22,14 @@ PERIOD_END=$(echo "$REPORT" | jq -r '.period.end // ""')
 
 # Extract summary data
 TOTAL_TRADES=$(echo "$REPORT" | jq -r '.summary.total_trades // 0')
+WIN_COUNT=$(echo "$REPORT" | jq -r '.summary.win_count // 0')
+LOSS_COUNT=$(echo "$REPORT" | jq -r '.summary.loss_count // 0')
 REALIZED_PNL=$(echo "$REPORT" | jq -r '.summary.realized_pnl // 0')
 UNREALIZED_PNL=$(echo "$REPORT" | jq -r '.summary.unrealized_pnl // 0')
 WIN_RATE=$(echo "$REPORT" | jq -r '.summary.win_rate // 0')
+PROFIT_FACTOR=$(echo "$REPORT" | jq -r '.summary.profit_factor // 0')
+AVG_WINNER=$(echo "$REPORT" | jq -r '.summary.avg_winner // 0')
+AVG_LOSER=$(echo "$REPORT" | jq -r '.summary.avg_loser // 0')
 CASH_BALANCE=$(echo "$REPORT" | jq -r '.balance.cash_balance // 0')
 CURRENCY=$(echo "$REPORT" | jq -r '.balance.currency // "USD"')
 
@@ -59,13 +64,69 @@ format_pnl() {
 REALIZED_PNL_FMT=$(format_pnl "$REALIZED_PNL")
 UNREALIZED_PNL_FMT=$(format_pnl "$UNREALIZED_PNL")
 
-# Build instrument breakdown
+# Build instrument breakdown with win rate and profit factor
 INSTRUMENT_BREAKDOWN=$(echo "$REPORT" | jq -r '
     .trades.by_instrument // [] |
     if length == 0 then
         "取引なし"
     else
-        map("\(.symbol): \(if .estimated_pnl >= 0 then "+" else "" end)\(.estimated_pnl | . * 100 | round / 100) (\(.trades)取引)") |
+        map("\(.symbol): \(.win_rate)% (\(.win_count)W/\(.loss_count)L) PF:\(.profit_factor)") |
+        join("\n")
+    end
+')
+
+# Build all trades list with win/loss indicators (limit to 15 for Discord)
+ALL_TRADES=$(echo "$REPORT" | jq -r '
+    .trades.all_trades // [] |
+    if length == 0 then
+        "トレードなし"
+    else
+        (length) as $total |
+        .[0:15] |
+        map(
+            (if .is_winner then "+" else "-" end) as $icon |
+            (if .pnl >= 0 then "+$" else "-$" end) as $pnl_prefix |
+            (if .pnl < 0 then (-.pnl) else .pnl end) as $abs_pnl |
+            (if .pips >= 0 then "+" else "" end) as $pips_prefix |
+            "\($icon) \(.symbol) \(.direction) \($pips_prefix)\(.pips)pips (\($pnl_prefix)\($abs_pnl | . * 100 | round / 100))"
+        ) |
+        if $total > 15 then
+            . + ["... 他 \($total - 15) 件"]
+        else
+            .
+        end |
+        join("\n")
+    end
+')
+
+# Build session stats
+SESSION_STATS=$(echo "$REPORT" | jq -r '
+    .trades.by_session // [] |
+    if length == 0 then
+        "データなし"
+    else
+        # Sort: tokyo, london, ny, other
+        sort_by(if .session == "tokyo" then 0 elif .session == "london" then 1 elif .session == "ny" then 2 else 3 end) |
+        map(
+            (if .session == "tokyo" then "🗼 東京" elif .session == "london" then "🏰 ロンドン" elif .session == "ny" then "🗽 NY" else "🌙 その他" end) as $name |
+            (if .total_pnl >= 0 then "+" else "" end) as $sign |
+            "\($name): \(.win_rate)% (\(.trade_count)回) \($sign)$\(.total_pnl)"
+        ) |
+        join("\n")
+    end
+')
+
+# Build holding time distribution
+HOLDING_STATS=$(echo "$REPORT" | jq -r '
+    .trades.holding_distribution // [] |
+    if length == 0 then
+        "データなし"
+    else
+        map(
+            (if .category == "scalp" then "⚡ スキャルプ(<5m)" elif .category == "short_term" then "🏃 短期(5-30m)" elif .category == "medium" then "🚶 中期(30m-2h)" else "🧘 長期(>2h)" end) as $name |
+            (if .total_pnl >= 0 then "+" else "" end) as $sign |
+            "\($name): \(.win_rate)% (\(.trade_count)回) \($sign)$\(.total_pnl)"
+        ) |
         join("\n")
     end
 ')
@@ -84,12 +145,21 @@ POSITIONS_SUMMARY=$(echo "$REPORT" | jq -r '
 # Build embed fields
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+# Format win/loss display
+WIN_LOSS_DISPLAY="${WIN_COUNT}W/${LOSS_COUNT}L"
+
 PAYLOAD=$(jq -n \
     --arg title "$EMOJI $TITLE" \
     --arg total_trades "$TOTAL_TRADES" \
     --arg win_rate "$WIN_RATE" \
+    --arg win_loss "$WIN_LOSS_DISPLAY" \
+    --arg profit_factor "$PROFIT_FACTOR" \
+    --arg avg_winner "$AVG_WINNER" \
+    --arg avg_loser "$AVG_LOSER" \
     --arg realized_pnl "$REALIZED_PNL_FMT" \
     --arg unrealized_pnl "$UNREALIZED_PNL_FMT" \
+    --arg session_stats "$SESSION_STATS" \
+    --arg holding_stats "$HOLDING_STATS" \
     --arg instrument_breakdown "$INSTRUMENT_BREAKDOWN" \
     --arg positions_summary "$POSITIONS_SUMMARY" \
     --arg cash_balance "$CASH_BALANCE" \
@@ -103,12 +173,12 @@ PAYLOAD=$(jq -n \
             fields: [
                 {
                     name: "📈 取引サマリ",
-                    value: "取引数: \($total_trades)\n勝率: \($win_rate)%",
+                    value: "取引数: \($total_trades)\n勝率: \($win_rate)% (\($win_loss))\nPF: \($profit_factor)",
                     inline: true
                 },
                 {
                     name: "💰 損益",
-                    value: "実現P/L: \($realized_pnl)\n含み損益: \($unrealized_pnl)",
+                    value: "実現P/L: \($realized_pnl)\n含み損益: \($unrealized_pnl)\n平均勝ち: $\($avg_winner) / 負け: $\($avg_loser)",
                     inline: true
                 },
                 {
@@ -117,12 +187,22 @@ PAYLOAD=$(jq -n \
                     inline: true
                 },
                 {
-                    name: "📋 通貨別内訳",
+                    name: "🌏 セッション別成績",
+                    value: $session_stats,
+                    inline: true
+                },
+                {
+                    name: "⏱️ 保有時間別成績",
+                    value: $holding_stats,
+                    inline: true
+                },
+                {
+                    name: "📊 通貨別パフォーマンス",
                     value: $instrument_breakdown,
                     inline: false
                 },
                 {
-                    name: "📊 オープンポジション",
+                    name: "📋 オープンポジション",
                     value: $positions_summary,
                     inline: false
                 }

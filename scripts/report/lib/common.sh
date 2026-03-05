@@ -99,6 +99,31 @@ aggregate_trades() {
     }'
 }
 
+# Aggregate detailed trade statistics from detailed trade history JSON
+# Input: detailed trade history JSON from get-trade-history.sh with "detailed" mode
+aggregate_round_trips() {
+    local trade_json="$1"
+
+    echo "$trade_json" | jq '
+    {
+        total_trades: (.summary.total_trades // 0),
+        win_count: (.summary.win_count // 0),
+        loss_count: (.summary.loss_count // 0),
+        win_rate: (.summary.win_rate // 0),
+        total_pnl: (.summary.total_pnl // 0),
+        avg_winner: (.summary.avg_winner // 0),
+        avg_loser: (.summary.avg_loser // 0),
+        profit_factor: (.summary.profit_factor // 0),
+        risk_reward_ratio: (.summary.risk_reward_ratio // 0),
+        by_instrument: (.by_instrument // []),
+        by_session: (.by_session // []),
+        session_by_instrument: (.session_by_instrument // []),
+        holding_distribution: (.holding_distribution // []),
+        all_trades: (.round_trips // []),
+        open_entries: (.open_entries // [])
+    }'
+}
+
 # Aggregate positions from get-positions.sh output
 # Input: positions JSON array
 aggregate_positions() {
