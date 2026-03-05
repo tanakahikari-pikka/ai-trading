@@ -269,11 +269,15 @@ def calc_session_by_instrument:
       ([$sess_trades[] | select(.is_winner == true)] | length) as $win_count |
       (length) as $total |
       ([$sess_trades[].pnl] | add // 0) as $pnl |
+      ([$sess_trades[] | select(.pnl > 0) | .pnl] | add // 0) as $gross_profit |
+      ([$sess_trades[] | select(.pnl < 0) | .pnl] | add // 0) as $gross_loss |
+      (if $gross_loss != 0 then ($gross_profit / (-$gross_loss)) else (if $gross_profit > 0 then 999 else 0 end) end) as $pf |
       {
         session: $session,
         trades: $total,
         win_rate: (if $total > 0 then ($win_count * 100 / $total) | . * 10 | round / 10 else 0 end),
-        pnl: ($pnl | . * 100 | round / 100)
+        pnl: ($pnl | . * 100 | round / 100),
+        profit_factor: ($pf | . * 100 | round / 100)
       }
     )) as $sessions |
     {
