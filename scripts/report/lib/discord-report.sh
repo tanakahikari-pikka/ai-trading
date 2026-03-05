@@ -131,6 +131,30 @@ HOLDING_STATS=$(echo "$REPORT" | jq -r '
     end
 ')
 
+# Build session × holding matrix (most important cross-tabulation)
+# Format: 勝率%/PF(件数)
+SESSION_HOLDING_MATRIX=$(echo "$REPORT" | jq -r '
+    .trades.session_holding_matrix // [] |
+    if length == 0 then
+        "データなし"
+    else
+        # Group by session
+        group_by(.session) |
+        map(
+            .[0].session as $sess |
+            (if $sess == "tokyo" then "🗼東京" elif $sess == "london" then "🏰ロンドン" elif $sess == "ny" then "🗽NY" else "🌙他" end) as $sess_name |
+            # Create row with all holding categories
+            ($sess_name + "\n" + (
+                . | map(
+                    (if .holding == "scalp" then "  S:" elif .holding == "short_term" then "  短:" elif .holding == "medium" then "  中:" else "  長:" end) as $h |
+                    "\($h) \(.win_rate)%/PF\(.profit_factor)(\(.trades)件)"
+                ) | join("\n")
+            ))
+        ) |
+        join("\n")
+    end
+')
+
 # Build positions summary
 POSITIONS_SUMMARY=$(echo "$REPORT" | jq -r '
     .positions.positions // [] |
@@ -158,8 +182,7 @@ PAYLOAD=$(jq -n \
     --arg avg_loser "$AVG_LOSER" \
     --arg realized_pnl "$REALIZED_PNL_FMT" \
     --arg unrealized_pnl "$UNREALIZED_PNL_FMT" \
-    --arg session_stats "$SESSION_STATS" \
-    --arg holding_stats "$HOLDING_STATS" \
+    --arg session_holding "$SESSION_HOLDING_MATRIX" \
     --arg instrument_breakdown "$INSTRUMENT_BREAKDOWN" \
     --arg positions_summary "$POSITIONS_SUMMARY" \
     --arg cash_balance "$CASH_BALANCE" \
@@ -187,14 +210,9 @@ PAYLOAD=$(jq -n \
                     inline: true
                 },
                 {
-                    name: "🌏 セッション別成績",
-                    value: $session_stats,
-                    inline: true
-                },
-                {
-                    name: "⏱️ 保有時間別成績",
-                    value: $holding_stats,
-                    inline: true
+                    name: "🎯 セッション×保有時間 (勝率/PF)",
+                    value: $session_holding,
+                    inline: false
                 },
                 {
                     name: "📊 通貨別パフォーマンス",

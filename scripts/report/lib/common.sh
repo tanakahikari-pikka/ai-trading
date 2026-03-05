@@ -119,6 +119,7 @@ aggregate_round_trips() {
         by_session: (.by_session // []),
         session_by_instrument: (.session_by_instrument // []),
         holding_distribution: (.holding_distribution // []),
+        session_holding_matrix: (.session_holding_matrix // []),
         all_trades: (.round_trips // []),
         open_entries: (.open_entries // [])
     }'

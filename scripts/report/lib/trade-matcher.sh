@@ -282,6 +282,47 @@ def calc_session_by_instrument:
     }
   );
 
+# Categorize holding time
+def holding_category:
+  if . < 5 then "scalp"
+  elif . < 30 then "short_term"
+  elif . < 120 then "medium"
+  else "long_term"
+  end;
+
+# Calculate session × holding time cross-tabulation
+def calc_session_holding_matrix:
+  # Add holding_category to each trade
+  map(. + {holding_category: (.holding_minutes | holding_category)}) |
+
+  # Group by session, then by holding_category
+  group_by(.session) | map(
+    .[0].session as $session |
+    group_by(.holding_category) | map(
+      . as $trades |
+      $trades[0].holding_category as $holding |
+      ($trades | length) as $count |
+      ([$trades[] | select(.is_winner == true)] | length) as $wins |
+      ([$trades[].pnl] | add // 0) as $total_pnl |
+      ([$trades[] | select(.pnl > 0) | .pnl] | add // 0) as $gross_profit |
+      ([$trades[] | select(.pnl < 0) | .pnl] | add // 0) as $gross_loss |
+      (if $gross_loss != 0 then ($gross_profit / (-$gross_loss)) else (if $gross_profit > 0 then 999 else 0 end) end) as $pf |
+      {
+        session: $session,
+        holding: $holding,
+        trades: $count,
+        win_rate: (if $count > 0 then ($wins * 100 / $count) | . * 10 | round / 10 else 0 end),
+        pnl: ($total_pnl | . * 100 | round / 100),
+        profit_factor: ($pf | . * 100 | round / 100)
+      }
+    )
+  ) | flatten |
+  # Sort for consistent display: tokyo, london, ny, other × scalp, short, medium, long
+  sort_by(
+    (if .session == "tokyo" then 0 elif .session == "london" then 1 elif .session == "ny" then 2 else 3 end) * 10 +
+    (if .holding == "scalp" then 0 elif .holding == "short_term" then 1 elif .holding == "medium" then 2 else 3 end)
+  );
+
 # Calculate holding time distribution
 def calc_holding_distribution:
   # Categories: scalp (<5min), short (5-30min), medium (30-120min), long (>120min)
@@ -374,6 +415,7 @@ else
     by_session: ($round_trips | calc_session_stats),
     session_by_instrument: ($round_trips | calc_session_by_instrument),
     holding_distribution: ($round_trips | calc_holding_distribution),
+    session_holding_matrix: ($round_trips | calc_session_holding_matrix),
     summary: ($round_trips | calc_summary)
   }
 end
