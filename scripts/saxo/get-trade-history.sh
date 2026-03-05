@@ -1,12 +1,15 @@
 #!/bin/bash
 # Get trade history (order blotter) from Saxo Bank API
-# Usage: get-trade-history.sh [days_back]
+# Usage: get-trade-history.sh [days_back] [mode]
 #   days_back: Number of days to look back (default: 7)
+#   mode: "detailed" for per-trade analysis with round trips (default: summary)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$SCRIPT_DIR/auth.sh"
 
 DAYS_BACK="${1:-7}"
+MODE="${2:-summary}"
 FROM_DATE=$(date -v-${DAYS_BACK}d +%Y-%m-%dT00:00:00Z 2>/dev/null || date -d "-${DAYS_BACK} days" +%Y-%m-%dT00:00:00Z)
 TO_DATE=$(date -v+1d +%Y-%m-%dT00:00:00Z 2>/dev/null || date -d "+1 day" +%Y-%m-%dT00:00:00Z)
 
@@ -35,18 +38,34 @@ if echo "$RESPONSE" | jq -e '.ErrorCode' > /dev/null 2>&1; then
     exit 1
 fi
 
-# Process and summarize with UIC to Symbol mapping
+# Detailed mode: Use trade-matcher for per-trade analysis
+if [[ "$MODE" == "detailed" ]]; then
+    source "$PROJECT_ROOT/scripts/report/lib/trade-matcher.sh"
+    DETAILED=$(match_trades_fifo "$RESPONSE")
+
+    # Add period info and output
+    echo "$DETAILED" | jq --arg from "$FROM_DATE" --arg to "$TO_DATE" '
+        . + {period: {from: $from, to: $to}}
+    '
+    exit 0
+fi
+
+# Default mode: Summary by instrument (original behavior)
 echo "$RESPONSE" | jq --arg from "$FROM_DATE" --arg to "$TO_DATE" '
-# UIC to Symbol mapping
+# UIC to Symbol mapping (from config/currencies/*.json + API search)
 def uic_to_symbol:
   {
+    "4": "AUDUSD",
+    "18": "EURJPY",
     "21": "EURUSD",
-    "31": "USDJPY",
+    "26": "GBPJPY",
+    "31": "GBPUSD",
+    "38": "USDCAD",
     "42": "USDJPY",
-    "22": "GBPUSD",
     "47": "USDPLN",
-    "1315": "EURJPY",
-    "8176": "XAUUSD"
+    "8176": "XAUUSD",
+    "8177": "XAGUSD",
+    "107830": "XPTUSD"
   }[tostring] // "UIC:\(.)";
 
 # Filter to FinalFill status only

@@ -170,7 +170,7 @@ config/strategies/mean-reversion/overrides/XAUUSD.json
 
 **概要:**
 - 優先順位: AI提案値 > ATR基準の静的計算
-- 静的計算: SL = ATR × 1.5、TP = SL幅 × 2.0
+- 静的計算: SL = ATR × 2.0、TP = SL幅 × 2.0
 - 設定: `config/strategies/<strategy>/defaults.json` の `sl_tp` フィールド
 
 ## 環境変数（.env）

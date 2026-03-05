@@ -17,7 +17,7 @@
     "enabled": true,
     "stop_loss": {
       "mode": "atr",
-      "multiplier": 1.5
+      "multiplier": 2.0
     },
     "take_profit": {
       "mode": "ratio",

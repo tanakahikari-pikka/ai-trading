@@ -25,9 +25,9 @@ echo "=== Daily Trading Report ===" >&2
 echo "Date: $TARGET_DATE" >&2
 echo "" >&2
 
-# 1. Get trade history for the target date
+# 1. Get trade history for the target date (detailed mode for per-trade analysis)
 echo "Fetching trade history..." >&2
-TRADE_HISTORY=$("$SAXO_SCRIPTS/get-trade-history.sh" 1 2>/dev/null) || TRADE_HISTORY='{}'
+TRADE_HISTORY=$("$SAXO_SCRIPTS/get-trade-history.sh" 1 detailed 2>/dev/null) || TRADE_HISTORY='{}'
 
 # 2. Get account balance
 echo "Fetching account balance..." >&2
@@ -42,19 +42,17 @@ POSITIONS_RAW=$("$SAXO_SCRIPTS/get-positions.sh" 2>/dev/null) || POSITIONS_RAW='
 # Extract JSON array from output (skip text lines before JSON)
 POSITIONS_JSON=$(echo "$POSITIONS_RAW" | sed -n '/^\[/,/^\]/p' | jq -c '.' 2>/dev/null || echo '[]')
 
-# 4. Aggregate trade statistics
-TRADES_AGGREGATED=$(aggregate_trades "$TRADE_HISTORY")
+# 4. Aggregate trade statistics (using detailed round-trip data)
+TRADES_AGGREGATED=$(aggregate_round_trips "$TRADE_HISTORY")
 TOTAL_TRADES=$(echo "$TRADES_AGGREGATED" | jq -r '.total_trades // 0')
-REALIZED_PNL=$(echo "$TRADES_AGGREGATED" | jq -r '.summary.total_estimated_pnl // 0')
-WINNING=$(echo "$TRADES_AGGREGATED" | jq -r '.summary.winning_instruments // 0')
-LOSING=$(echo "$TRADES_AGGREGATED" | jq -r '.summary.losing_instruments // 0')
-
-# Calculate win rate
-if [[ $((WINNING + LOSING)) -gt 0 ]]; then
-    WIN_RATE=$(echo "scale=0; $WINNING * 100 / ($WINNING + $LOSING)" | bc)
-else
-    WIN_RATE=0
-fi
+REALIZED_PNL=$(echo "$TRADES_AGGREGATED" | jq -r '.total_pnl // 0')
+WIN_COUNT=$(echo "$TRADES_AGGREGATED" | jq -r '.win_count // 0')
+LOSS_COUNT=$(echo "$TRADES_AGGREGATED" | jq -r '.loss_count // 0')
+WIN_RATE=$(echo "$TRADES_AGGREGATED" | jq -r '.win_rate // 0')
+AVG_WINNER=$(echo "$TRADES_AGGREGATED" | jq -r '.avg_winner // 0')
+AVG_LOSER=$(echo "$TRADES_AGGREGATED" | jq -r '.avg_loser // 0')
+PROFIT_FACTOR=$(echo "$TRADES_AGGREGATED" | jq -r '.profit_factor // 0')
+RISK_REWARD=$(echo "$TRADES_AGGREGATED" | jq -r '.risk_reward_ratio // 0')
 
 # 5. Aggregate positions
 POSITIONS_AGGREGATED=$(aggregate_positions "$POSITIONS_JSON")
@@ -72,6 +70,12 @@ REPORT=$(jq -n \
     --argjson realized_pnl "$REALIZED_PNL" \
     --argjson unrealized_pnl "$UNREALIZED_PNL" \
     --argjson win_rate "$WIN_RATE" \
+    --argjson win_count "$WIN_COUNT" \
+    --argjson loss_count "$LOSS_COUNT" \
+    --argjson avg_winner "$AVG_WINNER" \
+    --argjson avg_loser "$AVG_LOSER" \
+    --argjson profit_factor "$PROFIT_FACTOR" \
+    --argjson risk_reward "$RISK_REWARD" \
     --argjson cash_balance "$CASH_BALANCE" \
     --arg currency "$CURRENCY" \
     --argjson trades "$TRADES_AGGREGATED" \
@@ -85,9 +89,15 @@ REPORT=$(jq -n \
         },
         summary: {
             total_trades: $total_trades,
+            win_count: $win_count,
+            loss_count: $loss_count,
             realized_pnl: $realized_pnl,
             unrealized_pnl: $unrealized_pnl,
-            win_rate: $win_rate
+            win_rate: $win_rate,
+            avg_winner: $avg_winner,
+            avg_loser: $avg_loser,
+            profit_factor: $profit_factor,
+            risk_reward_ratio: $risk_reward
         },
         balance: {
             cash_balance: $cash_balance,
