@@ -155,6 +155,29 @@ SESSION_HOLDING_MATRIX=$(echo "$REPORT" | jq -r '
     end
 ')
 
+# Build instrument × session matrix
+# Format: 勝率%/PF(件数)
+INSTRUMENT_SESSION_MATRIX=$(echo "$REPORT" | jq -r '
+    .trades.session_by_instrument // [] |
+    if length == 0 then
+        "データなし"
+    else
+        map(
+            .symbol as $sym |
+            .sessions as $sessions |
+            # Sort sessions: tokyo, london, ny, other
+            ($sessions | sort_by(if .session == "tokyo" then 0 elif .session == "london" then 1 elif .session == "ny" then 2 else 3 end)) as $sorted |
+            ($sym + ": " + (
+                $sorted | map(
+                    (if .session == "tokyo" then "東" elif .session == "london" then "L" elif .session == "ny" then "NY" else "他" end) as $s |
+                    "\($s)\(.win_rate)%/\(.profit_factor)(\(.trades))"
+                ) | join(" ")
+            ))
+        ) |
+        join("\n")
+    end
+')
+
 # Build positions summary
 POSITIONS_SUMMARY=$(echo "$REPORT" | jq -r '
     .positions.positions // [] |
@@ -183,6 +206,7 @@ PAYLOAD=$(jq -n \
     --arg realized_pnl "$REALIZED_PNL_FMT" \
     --arg unrealized_pnl "$UNREALIZED_PNL_FMT" \
     --arg session_holding "$SESSION_HOLDING_MATRIX" \
+    --arg instrument_session "$INSTRUMENT_SESSION_MATRIX" \
     --arg instrument_breakdown "$INSTRUMENT_BREAKDOWN" \
     --arg positions_summary "$POSITIONS_SUMMARY" \
     --arg cash_balance "$CASH_BALANCE" \
@@ -212,6 +236,11 @@ PAYLOAD=$(jq -n \
                 {
                     name: "🎯 セッション×保有時間 (勝率/PF)",
                     value: $session_holding,
+                    inline: false
+                },
+                {
+                    name: "🌍 通貨×セッション (勝率/PF)",
+                    value: $instrument_session,
                     inline: false
                 },
                 {
